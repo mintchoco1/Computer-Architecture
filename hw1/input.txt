@@ -1,0 +1,8 @@
++ 0x3 0x5
+M R1 R0
++ R1 0xf
+M R2 R0
+LW R3 0xf
+SW R2 R4
++ R2 R4
+/ R0 R3
