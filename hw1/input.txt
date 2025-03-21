@@ -13,4 +13,4 @@ C R1 0x5
 B 1
 LW R3 0xf
 SW R2 R4
-H
+reset

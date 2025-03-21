@@ -203,7 +203,7 @@ int main(void){
     Instruction instruction;
     char line[100];
 
-    FILE *file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\input.txt", "r");
+    FILE *file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd.txt", "r");
     if(file == NULL){
         perror("Unable to open the file");
         return 1;
