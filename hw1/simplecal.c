@@ -5,16 +5,27 @@
 
 #define Max_REGISTERS 10
 
-void update_register(const char *operand1, const char *operand2);
-
-int registers[Max_REGISTERS] = {0}; // 모든 레지스터 0으로 초기화
-int count = 0;
-
 typedef struct {
     char opcode[10];
     char operand1[20];
     char operand2[20];
 } Instruction;
+
+void update_register(const char *dest, const char *src);
+int get_operand_value(const char *operand);
+void print_registers();
+void execute_instruction(const Instruction *instruction, FILE *file);
+void jump(const Instruction *instruction, FILE *file);
+void conditional_jump(const Instruction *instruction, FILE *file);
+void Simple_Math(const Instruction *instruction);
+void load_word(const Instruction *instruction);
+void store_word(const Instruction *instruction);
+void compare_operand(const Instruction *instruction);
+void reset_registers();
+
+int registers[Max_REGISTERS] = {0}; // 모든 레지스터 0으로 초기화
+int count = 0;
+int comparison_result = 0;
 
 // 문자열 파싱 16진수인지 레지스터인지 확인
 int get_operand_value(const char* operand) {
@@ -77,39 +88,41 @@ void compare_operand(const Instruction *instruction){
     int operand2_value = get_operand_value(instruction->operand2);
 
     if (operand1_value >= operand2_value) {
-        registers[0] = 0;
+        comparison_result = 0;
     } else {
-        registers[0] = 1;
+        comparison_result = 1;
     }
-    printf("Compared %d and %d, R0 set to %d\n", operand1_value, operand2_value, registers[0]);
+    printf("Compared %d and %d, comparison_value set to %d\n", operand1_value, operand2_value, comparison_result);
 }
 
 void conditional_jump(const Instruction *instruction, FILE *file) {
-    if (registers[0] == 1) {
-        int jump_to = atoi(instruction->operand1); // 점프할 명령어 줄 번호
-        printf("Conditional jump to instruction %d\n", jump_to);
+    if (comparison_result == 1) {
+        // 점프할 명령어 줄 번호 파싱
+        int jump_to = atoi(instruction->operand1);
+        rewind(file); // 파일의 시작으로 이동
+        char line[256];
+        int current_line = 1;
 
-        // 파일 포인터를 초기 위치로 이동
-        rewind(file);
-
-        char line[100];
-        int current_line = 0;
-
-        // 파일을 다시 읽으면서 점프할 줄까지 이동
         while (fgets(line, sizeof(line), file)) {
-            current_line++;
             if (current_line == jump_to) {
-                // 점프할 줄에 도달하면 파일 포인터를 해당 위치로 이동
-                printf("Jumped to instruction %d\n", jump_to);
-                return;
+                // 점프할 줄에 도달하면 해당 줄의 명령어를 다시 처리
+                sscanf(line, "%s %s %s", instruction->opcode, instruction->operand1, instruction->operand2);
+                execute_instruction(instruction, file);
+                break;
             }
+            current_line++;
         }
-
-        // 점프할 줄이 파일에 없는 경우
-        printf("Error: Jump target %d is out of range\n", jump_to);
+    } else {
+        printf("조건 불만족, 점프하지 않음\n");
     }
 }
-
+/*
+jump 함수는 파일 포인터를 이동시키지만 이동한 후에 해당 위치에서 명령어를 실행하지 못함
+또한 파일 포인터를 이동시킨 후에 다음 명령어를 읽어오라는 로직이 누락됨 
+jump 명령어를 수행하지 못함 gpt 사용
+해결 방법은 파일 포인터를 이동시킨 후에 해당 위치에서 명령어를 읽어와서 명령어를 실행하고 
+fgets를 사용해서 해당 줄을 읽어오고 명령어 실행 
+*/
 void jump(const Instruction *instruction, FILE *file) {
     int jump_to = atoi(instruction->operand1); // 점프할 명령어 줄 번호
     printf("Jump to instruction %d\n", jump_to);
@@ -124,8 +137,12 @@ void jump(const Instruction *instruction, FILE *file) {
     while (fgets(line, sizeof(line), file)) {
         current_line++;
         if (current_line == jump_to) {
-            // 점프할 줄에 도달하면 파일 포인터를 해당 위치로 이동
-            printf("Jumped to instruction %d\n", jump_to);
+            // 점프할 줄에 도달하면 해당 줄을 읽어서 명령어 실행
+            Instruction jump_instruction;
+            if (sscanf(line, "%s %s %s", jump_instruction.opcode, jump_instruction.operand1, jump_instruction.operand2) == 2) {
+                printf("Executing jump target: opcode: %s, operand1: %s, operand2: %s\n", jump_instruction.opcode, jump_instruction.operand1, jump_instruction.operand2);
+                execute_instruction(&jump_instruction, file);   
+            }
             return;
         }
     }
@@ -203,7 +220,7 @@ int main(void){
     Instruction instruction;
     char line[100];
 
-    FILE *file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd.txt", "r");
+    FILE *file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\input.txt", "r");
     if(file == NULL){
         perror("Unable to open the file");
         return 1;

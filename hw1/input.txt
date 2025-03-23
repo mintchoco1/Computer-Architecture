@@ -1,16 +1,6 @@
-+ 0x3 0x5
-M R1 R0
-+ R1 0xf
+M R1 0x64  
+M R2 0x32  
+C R1 R2 
++ R1 R2
 M R2 R0
-LW R3 0xf
-SW R2 R4
-+ R2 R4
-/ R0 R3
-reset
-+ 0x3 0x5
-M R1 R0
-C R1 0x5
-B 1
-LW R3 0xf
-SW R2 R4
-reset
+B 2

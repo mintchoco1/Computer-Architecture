@@ -1,0 +1,11 @@
+LW r0 0xF
+LW r1 0x4
+ADD r2 r0 r1
+MOV r0 r2
+SW r0 STDOUT
+RST
+LW r0 0x2
+LW r1 0x4
+MUL r2 r0 r1
+MOV r0 r2
+SW r0 STDOUT
