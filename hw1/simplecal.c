@@ -11,7 +11,7 @@ typedef struct {
     char operand2[20];
 } Instruction;
 
-void update_register(const char *dest, const char *src);
+void move_register(const char *dest, const char *src);
 int get_operand_value(const char *operand);
 void print_registers();
 void execute_instruction(const Instruction *instruction, FILE *file);
@@ -101,28 +101,22 @@ void conditional_jump(const Instruction *instruction, FILE *file) {
         int jump_to = atoi(instruction->operand1);
         rewind(file); // 파일의 시작으로 이동
         char line[256];
-        int current_line = 1;
+        int current_line = 0;
 
         while (fgets(line, sizeof(line), file)) {
+            current_line++;
             if (current_line == jump_to) {
                 // 점프할 줄에 도달하면 해당 줄의 명령어를 다시 처리
                 sscanf(line, "%s %s %s", instruction->opcode, instruction->operand1, instruction->operand2);
                 execute_instruction(instruction, file);
                 break;
             }
-            current_line++;
         }
     } else {
         printf("조건 불만족, 점프하지 않음\n");
     }
 }
-/*
-jump 함수는 파일 포인터를 이동시키지만 이동한 후에 해당 위치에서 명령어를 실행하지 못함
-또한 파일 포인터를 이동시킨 후에 다음 명령어를 읽어오라는 로직이 누락됨 
-jump 명령어를 수행하지 못함 gpt 사용
-해결 방법은 파일 포인터를 이동시킨 후에 해당 위치에서 명령어를 읽어와서 명령어를 실행하고 
-fgets를 사용해서 해당 줄을 읽어오고 명령어 실행 
-*/
+
 void jump(const Instruction *instruction, FILE *file) {
     int jump_to = atoi(instruction->operand1); // 점프할 명령어 줄 번호
     printf("Jump to instruction %d\n", jump_to);
@@ -160,7 +154,7 @@ void reset_registers() {
 
 void execute_instruction(const Instruction *instruction, FILE *file) {
     if (strcmp(instruction->opcode, "M") == 0) {
-        update_register(instruction->operand1, instruction->operand2);
+        move_register(instruction->operand1, instruction->operand2);
     }
     else if(strcmp(instruction->opcode, "LW") == 0){
         load_word(instruction);
@@ -189,7 +183,7 @@ void execute_instruction(const Instruction *instruction, FILE *file) {
     }
 }
 
-void update_register(const char *dest, const char *src) {
+void move_register(const char *dest, const char *src) {
     int dest_index = atoi(dest + 1); // "R1"에서 "1" 추출 (0-based 인덱스)
     int src_value = 0;
 

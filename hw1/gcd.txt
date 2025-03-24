@@ -1,13 +1,6 @@
-M R1 0x36  
-M R2 0x1E  
-C R1 R2    
-B 6       
-/ R1 R2    
-M R3 R0    
-C R3 0x0   
-B 10       
-M R1 R2    
-M R2 R3    
-J 2        
-M R0 R2    
-H          
+M R1 0x5       
+M R2 0x5      
+C R1 R2       
+BZ 10         
+BNZ 8        
+M R9 0x1     
