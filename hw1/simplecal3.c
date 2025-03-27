@@ -13,6 +13,12 @@ int comparison_value;
 //  comparison_value == -1 => (operand1 <  operand2)
 //  comparison_value == +1 => (operand1 >  operand2)
 
+//exception check
+//unknown 오퍼레이터 f % 
+//oberation format 0xz A B 
+//operation input boundary check 0x99999999999
+//register boundary r[99999]
+
 // "R2"등 -> 정수(2)
 int get_reg_index(const char *reg) {
     return atoi(reg + 1);
@@ -22,7 +28,8 @@ int get_reg_index(const char *reg) {
 int parse_value(const char *val_str) {
     if ((val_str[0] == '0' && (val_str[1] == 'x' || val_str[1] == 'X'))) {
         return (int)strtol(val_str, NULL, 16);
-    } else {
+    } 
+    else {
         return atoi(val_str);
     }
 }
@@ -33,7 +40,7 @@ void print_registers() {
     for (int i = 0; i < 10; i++) {
         printf("R%d=%d ", i, registers[i]);
     }
-    // 비교값도 표시 (디버깅용)
+    // 비교값도 표시
     printf("(comparison_value=%d)\n", comparison_value);
 }
 
@@ -154,7 +161,7 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
     // --- 여기서 명령어 실행 직후, 레지스터 상태를 출력 ---
     // current_line+1 은 다음 줄이 아니라 "현재 실행한 줄의 번호"로 보이고 싶다면 current_line 그대로 사용.
     // (파일 내 실제 줄번호와 pc+1의 차이가 있을 수 있지만, 대략 맞춰서 표현)
-    printf("\n[EXEC] line %d: %s\n", current_line, instruction);
+    printf("\nline %d: %s\n", current_line, instruction);
     print_registers();
     printf("\n");
 }
@@ -170,7 +177,6 @@ int main(void) {
     char instructions[MAX_INSTRUCTIONS][MAX_LINE_LENGTH];
     int instruction_count = 0;
 
-    // pseudo_asm.txt 열기
     FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd2.txt", "r");
     if (!fp) {
         perror("파일 열기 실패");
