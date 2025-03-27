@@ -10,12 +10,17 @@
 int registers[10];
 int comparison_value;
 
-//exception check
-//unknown 오퍼레이터 f % 
-//oberation format 0xz A B 
-//operation input boundary check 0x99999999999
-//register boundary r[99999]
-//포인터 에러
+/*exception check
+unknown 오퍼레이터 f % 
+oberation format 0xz A B 
+operation input boundary check 0x99999999999
+register boundary r[99999]
+포인터 에러
+잘못된 16진수 값 입력
+파일 입력 오류
+
+*/
+
 
 // "R2"등 -> 정수(2)
 int get_reg_index(const char *reg) {
@@ -164,7 +169,7 @@ int main(void) {
     char instructions[MAX_INSTRUCTIONS][MAX_LINE_LENGTH];
     int instruction_count = 0;
 
-    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\input2.txt", "r");
+    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd2.txt", "r");
     if (!fp) {
         perror("파일 열기 실패");
         return 1;

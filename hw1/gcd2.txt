@@ -1,0 +1,11 @@
+M R1 0x15
+M R2 0x7
+C R2 R0
+BEQ 9
+/ R1 R2
+M R3 R0
+M R1 R2
+M R2 R3
+BNE 3
+M R0 R1
+H
