@@ -1,6 +1,13 @@
-M R1 0x5       
-M R2 0x5      
-C R1 R2       
-BZ 10         
-BNZ 8        
-M R9 0x1     
+M R1 0x24
+M R2 0x18
+C R2 R0     
+BEQ 12      
+/ R1 R2     
+* R0 R2      
+- R1 R0     
+M R3 R0      
+M R1 R2
+M R2 R3
+BNE 3        
+M R0 R1
+H

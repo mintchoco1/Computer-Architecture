@@ -18,6 +18,8 @@ int comparison_value;
 //oberation format 0xz A B 
 //operation input boundary check 0x99999999999
 //register boundary r[99999]
+//포인터 에러
+
 
 // "R2"등 -> 정수(2)
 int get_reg_index(const char *reg) {
@@ -58,6 +60,7 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
         (*pc)++;
         return;
     }
+
     char *op1 = strtok(NULL, " \t");
     char *op2 = strtok(NULL, " \t");
 
@@ -152,6 +155,12 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
             (*pc)++;
         }
     }
+    else if (strcmp(opcode, "H") == 0){
+        printf("프로그램 종료 (조건 H 만족)");
+        printf("\n=== 프로그램 종료 후 최종 레지스터 상태 ===\n");
+        print_registers();
+        exit(0);
+    }
     else {
         // 알 수 없는 명령어
         printf("Unknown opcode: %s (line %d)\n", opcode, current_line);
@@ -177,7 +186,7 @@ int main(void) {
     char instructions[MAX_INSTRUCTIONS][MAX_LINE_LENGTH];
     int instruction_count = 0;
 
-    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd2.txt", "r");
+    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd.txt", "r");
     if (!fp) {
         perror("파일 열기 실패");
         return 1;
@@ -223,16 +232,6 @@ int main(void) {
         // 파일 상 "줄 번호"를 보여주기 위해 (pc+1)을 current_line으로 쓸 수 있음
         int current_line = pc + 1; 
         execute_instruction(instructions[pc], &pc, current_line);
-
-        // 종료 조건 예: R9 == 1
-        if (registers[9] == 1) {
-            printf("R9 == 1: 종료 조건 만족.\n");
-            break;
-        }
     }
-
-    // 최종 레지스터 상태
-    printf("\n=== 프로그램 종료 후 최종 레지스터 상태 ===\n");
-    print_registers();
     return 0;
 }
