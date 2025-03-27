@@ -9,9 +9,6 @@
 // 전역 레지스터: R0 ~ R9
 int registers[10];
 int comparison_value;
-//  comparison_value ==  0 => (operand1 == operand2)
-//  comparison_value == -1 => (operand1 <  operand2)
-//  comparison_value == +1 => (operand1 >  operand2)
 
 //exception check
 //unknown 오퍼레이터 f % 
@@ -19,7 +16,6 @@ int comparison_value;
 //operation input boundary check 0x99999999999
 //register boundary r[99999]
 //포인터 에러
-
 
 // "R2"등 -> 정수(2)
 int get_reg_index(const char *reg) {
@@ -46,7 +42,6 @@ void print_registers() {
     printf("(comparison_value=%d)\n", comparison_value);
 }
 
-// 한 줄 명령어 실행 (실행 후 레지스터 상태 출력)
 void execute_instruction(const char *instruction, int *pc, int current_line) {
     // current_line 은 "몇 번째 줄을 실행 중인지"를 표시하기 위해 받음
     // (pc는 실행 중에 변경될 수 있음)
@@ -61,68 +56,54 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
         return;
     }
 
-    char *op1 = strtok(NULL, " \t");
-    char *op2 = strtok(NULL, " \t");
+    char *operand1 = strtok(NULL, " \t");
+    char *operand2 = strtok(NULL, " \t");
 
-    // 실제 명령어 처리
     if (strcmp(opcode, "M") == 0) {
-        // M R1 0x64 => registers[R1] = 100
-        if (op1 && op2) {
-            int dest_idx = get_reg_index(op1);
-            if (op2[0] == 'R' || op2[0] == 'r') {
-                int src_idx = get_reg_index(op2);
+        if (operand1 && operand2) {
+            int dest_idx = get_reg_index(operand1);
+            if (operand2[0] == 'R' || operand2[0] == 'r') {
+                int src_idx = get_reg_index(operand2);
                 registers[dest_idx] = registers[src_idx];
             } else {
-                registers[dest_idx] = parse_value(op2);
+                registers[dest_idx] = parse_value(operand2);
             }
         }
         (*pc)++;
     }
     else if (strcmp(opcode, "+") == 0) {
-        // + R1 R2 => R0 = R1 + R2
-        if (op1 && op2) {
-            int r1 = get_reg_index(op1);
-            int r2 = get_reg_index(op2);
-            registers[0] = registers[r1] + registers[r2];
-        }
+        int val1 = (operand1[0] == 'R' || operand1[0] == 'r') ? registers[get_reg_index(operand1)] : parse_value(operand1);
+        int val2 = (operand2[0] == 'R' || operand2[0] == 'r') ? registers[get_reg_index(operand2)] : parse_value(operand2);
+        registers[0] = val1 + val2;
         (*pc)++;
     }
     else if (strcmp(opcode, "-") == 0) {
-        // - R1 R2 => R0 = R1 - R2
-        if (op1 && op2) {
-            int r1 = get_reg_index(op1);
-            int r2 = get_reg_index(op2);
-            registers[0] = registers[r1] - registers[r2];
-        }
+        int val1 = (operand1[0] == 'R' || operand1[0] == 'r') ? registers[get_reg_index(operand1)] : parse_value(operand1);
+        int val2 = (operand2[0] == 'R' || operand2[0] == 'r') ? registers[get_reg_index(operand2)] : parse_value(operand2);
+        registers[0] = val1 - val2;
         (*pc)++;
     }
     else if (strcmp(opcode, "*") == 0) {
-        // * R1 R2 => R0 = R1 * R2
-        if (op1 && op2) {
-            int r1 = get_reg_index(op1);
-            int r2 = get_reg_index(op2);
-            registers[0] = registers[r1] * registers[r2];
-        }
+        int val1 = (operand1[0] == 'R' || operand1[0] == 'r') ? registers[get_reg_index(operand1)] : parse_value(operand1);
+        int val2 = (operand2[0] == 'R' || operand2[0] == 'r') ? registers[get_reg_index(operand2)] : parse_value(operand2);
+        registers[0] = val1 * val2;
         (*pc)++;
     }
     else if (strcmp(opcode, "/") == 0) {
-        // / R1 R2 => R0 = R1 / R2
-        if (op1 && op2) {
-            int r1 = get_reg_index(op1);
-            int r2 = get_reg_index(op2);
-            if (registers[r2] == 0) {
-                printf("Runtime Error: Divide by zero at line %d\n", current_line);
-                exit(1);
-            }
-            registers[0] = registers[r1] / registers[r2];
+        int val1 = (operand1[0] == 'R' || operand1[0] == 'r') ? registers[get_reg_index(operand1)] : parse_value(operand1);
+        int val2 = (operand2[0] == 'R' || operand2[0] == 'r') ? registers[get_reg_index(operand2)] : parse_value(operand2);
+        if (val2 == 0) {
+            printf("Runtime Error: Divide by zero at line %d\n", current_line);
+            exit(1);
         }
+        registers[0] = val1 / val2;
         (*pc)++;
     }
     else if (strcmp(opcode, "C") == 0) {
         // C R1 R2 => comparison_value 설정
-        if (op1 && op2) {
-            int val1 = registers[get_reg_index(op1)];
-            int val2 = registers[get_reg_index(op2)];
+        if (operand1 && operand2) {
+            int val1 = registers[get_reg_index(operand1)];
+            int val2 = registers[get_reg_index(operand2)];
             if (val1 == val2) comparison_value = 0;
             else if (val1 < val2) comparison_value = -1;
             else comparison_value = 1;
@@ -131,8 +112,8 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
     }
     else if (strcmp(opcode, "BEQ") == 0) {
         // BEQ n => if (comparison_value == 0) => pc = n-1
-        if (op1) {
-            int jump_line = parse_value(op1) - 1;
+        if (operand1) {
+            int jump_line = parse_value(operand1) - 1;
             if (comparison_value == 0) {
                 (*pc) = jump_line;
             } else {
@@ -144,8 +125,8 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
     }
     else if (strcmp(opcode, "BNE") == 0) {
         // BNE n => if (comparison_value != 0) => pc = n-1
-        if (op1) {
-            int jump_line = parse_value(op1) - 1;
+        if (operand1) {
+            int jump_line = parse_value(operand1) - 1;
             if (comparison_value != 0) {
                 (*pc) = jump_line;
             } else {
@@ -167,9 +148,6 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
         (*pc)++;
     }
 
-    // --- 여기서 명령어 실행 직후, 레지스터 상태를 출력 ---
-    // current_line+1 은 다음 줄이 아니라 "현재 실행한 줄의 번호"로 보이고 싶다면 current_line 그대로 사용.
-    // (파일 내 실제 줄번호와 pc+1의 차이가 있을 수 있지만, 대략 맞춰서 표현)
     printf("\nline %d: %s\n", current_line, instruction);
     print_registers();
     printf("\n");
@@ -186,7 +164,7 @@ int main(void) {
     char instructions[MAX_INSTRUCTIONS][MAX_LINE_LENGTH];
     int instruction_count = 0;
 
-    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd.txt", "r");
+    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\input2.txt", "r");
     if (!fp) {
         perror("파일 열기 실패");
         return 1;
@@ -228,7 +206,6 @@ int main(void) {
 
     // 실행 루프
     while (pc >= 0 && pc < instruction_count) {
-        // 실제 실행할 명령어
         // 파일 상 "줄 번호"를 보여주기 위해 (pc+1)을 current_line으로 쓸 수 있음
         int current_line = pc + 1; 
         execute_instruction(instructions[pc], &pc, current_line);
