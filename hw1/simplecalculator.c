@@ -2,39 +2,62 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdbool.h>
 
 #define MAX_INSTRUCTIONS 1000
 #define MAX_LINE_LENGTH  256
+#define MAX_REG_INDEX    9
 
 // 전역 레지스터: R0 ~ R9
 int registers[10];
 int comparison_value;
 
-/*exception check
-unknown 오퍼레이터 f % 
-oberation format 0xz A B 
-operation input boundary check 0x99999999999
-register boundary r[99999]
-포인터 에러
-잘못된 16진수 값 입력
-파일 입력 오류
+// 지원하는 명령어 리스트
+const char* supported_opcodes[] = {"M", "+", "-", "*", "/", "C", "BEQ", "BNE", "H"};
+const int num_supported_opcodes = 9;
 
-*/
-
-
-// "R2"등 -> 정수(2)
+// 레지스터 인덱스 유효성 검사
 int get_reg_index(const char *reg) {
-    return atoi(reg + 1);
+    int idx = atoi(reg + 1);
+    if (idx < 0 || idx > MAX_REG_INDEX) {
+        printf("Error: Register index %d out of bounds\n", idx);
+        exit(1);
+    }
+    return idx;
 }
 
 // 0x.. -> 16진수 파싱, 아니면 10진수
 int parse_value(const char *val_str) {
-    if ((val_str[0] == '0' && (val_str[1] == 'x' || val_str[1] == 'X'))) {
-        return (int)strtol(val_str, NULL, 16);
-    } 
-    else {
-        return atoi(val_str);
+    char *endptr;
+    long int num;
+
+    if (val_str[0] == '0' && (val_str[1] == 'x' || val_str[1] == 'X')) {
+        num = strtol(val_str, &endptr, 16);
+        // strtol 이후 endptr가 문자열 끝을 가리키는지 검사하여 잘못된 입력 확인
+        if (*endptr != '\0') {
+            printf("Invalid hexadecimal number: %s\n", val_str);
+            return 0;  // 잘못된 입력인 경우 0을 반환하거나 적절한 에러 처리를 할 수 있습니다.
+        }
+        return (int)num;
+    } else {
+        num = strtol(val_str, &endptr, 10);
+        // strtol 이후 endptr가 문자열 끝을 가리키는지 검사하여 잘못된 입력 확인
+        if (*endptr != '\0') {
+            printf("Invalid decimal number: %s\n", val_str);
+            return 0;  // 잘못된 입력인 경우 0을 반환하거나 적절한 에러 처리를 할 수 있습니다.
+        }
+        return (int)num;
     }
+}
+
+// 명령어 검사 함수
+bool is_supported_opcode(const char* opcode) {
+    for (int i = 0; i < num_supported_opcodes; i++) {
+        if (strcmp(opcode, supported_opcodes[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // 레지스터 상태를 모두 출력하는 함수
@@ -50,7 +73,6 @@ void print_registers() {
 void execute_instruction(const char *instruction, int *pc, int current_line) {
     // current_line 은 "몇 번째 줄을 실행 중인지"를 표시하기 위해 받음
     // (pc는 실행 중에 변경될 수 있음)
-
     // 버퍼를 만들어서 strtok로 파싱
     char buffer[MAX_LINE_LENGTH];
     strcpy(buffer, instruction);
@@ -58,6 +80,13 @@ void execute_instruction(const char *instruction, int *pc, int current_line) {
     char *opcode = strtok(buffer, " \t");
     if (!opcode) {
         (*pc)++;
+        return;
+    }
+
+    // 지원하지 않는 명령어 처리
+    if (!is_supported_opcode(opcode)) {
+        printf("Error: Unknown opcode '%s' at line %d\n", opcode, current_line);
+        (*pc)++;  // 다음 명령어로 넘어갑니다.
         return;
     }
 
@@ -169,7 +198,7 @@ int main(void) {
     char instructions[MAX_INSTRUCTIONS][MAX_LINE_LENGTH];
     int instruction_count = 0;
 
-    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd2.txt", "r");
+    FILE *fp = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw1\\gcd1.txt", "r");
     if (!fp) {
         perror("파일 열기 실패");
         return 1;
