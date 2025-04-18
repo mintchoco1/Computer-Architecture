@@ -3,7 +3,7 @@
 
 #define Mem_size 2048
 
-uint32_t memory[Mem_size];
+uint32_t mem[Mem_size];
 
 typedef struct{
     uint32_t Reg[32]; // 32 registers
@@ -24,7 +24,7 @@ void initializeRegisters(Registers *r) {
         r->Reg[i] = 0;
     }
     r->pc = 0;
-    r->Reg[31] = 0xFFFFFFFF;//RA
+    r->Reg[31] = 0xffffffff;//RA
     r->Reg[29] = 0x10000000;//SP
 }
 
