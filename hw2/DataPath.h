@@ -6,9 +6,9 @@
 uint32_t mem[Mem_size];
 
 typedef struct{
-    uint32_t Reg[32]; // 32 registers
+    uint32_t Reg[32]; // 32 Reigsters
     int pc; // program counter
-} Registers;
+} Reigsters;
 
 typedef struct {
     int RegDest;
@@ -19,7 +19,18 @@ typedef struct {
     int MemWrite;
 } control_signal;   
 
-void initializeRegisters(Registers *r) {
+typedef struct instruction {
+    uint8_t opcode;
+    uint8_t rs;
+    uint8_t rt;
+    uint8_t rd;
+    uint8_t shamt;
+    uint8_t funct;
+    uint32_t immediate;
+    uint32_t address;
+} instruction;
+
+void initializeReigsters(Reigsters *r) {
     for (int i = 0; i < 32; i++){
         r->Reg[i] = 0;
     }
@@ -27,12 +38,22 @@ void initializeRegisters(Registers *r) {
     r->Reg[31] = 0xffffffff;//RA
     r->Reg[29] = 0x10000000;//SP
 }
+void RF_Init() {
+    Register[sp] = 0x1000000;
+    Register[ra] = 0xffffffff;
+}
+
+// read data from the registers
+void RF_Read(uint8_t RdReg1, uint8_t RdReg2) {
+    ReadData1 = Register[RdReg1];
+    ReadData2 = Register[RdReg2];
+}
 
 void execute(uint32_t instruction) {
     uint32_t opcode = (instruction >> 26) & 0x3F;
-    uint32_t rs = (instruction >> 21) & 0x1F;
-    uint32_t rt = (instruction >> 16) & 0x1F;
-    uint32_t rd = (instruction >> 11) & 0x1F;
+    uint8_t rs = (instruction >> 21) & 0x1F;
+    uint8_t rt = (instruction >> 16) & 0x1F;
+    uint8_t rd = (instruction >> 11) & 0x1F;
     uint32_t shamt = (instruction >> 6) & 0x1F;
     uint32_t funct = instruction & 0x3F;
     uint32_t imm = instruction & 0xFFFF;
@@ -42,31 +63,31 @@ void execute(uint32_t instruction) {
         case 0x00: //r type
         switch (funct){
             case 0x20: // ADD
-                Registers[rd] = Registers[rs] + Registers[rt];
+                Reigsters[rd] = Reigsters[rs] + Reigsters[rt];
                 break;
             case 0x22: // SUB
-                registers[rd] = registers[rs] - registers[rt];
+                Reigsters[rd] = Reigsters[rs] - Reigsters[rt];
                 break;
             case 0x24: // AND
-                registers[rd] = registers[rs] & registers[rt];
+                Reigsters[rd] = Reigsters[rs] & Reigsters[rt];
                 break;
             case 0x25: // OR
-                registers[rd] = registers[rs] | registers[rt];
+                Reigsters[rd] = Reigsters[rs] | Reigsters[rt];
                 break;
             case 0x27: // NOR
-                registers[rd] = ~(registers[rs] | registers[rt]);
+                Reigsters[rd] = ~(Reigsters[rs] | Reigsters[rt]);
                 break;
             case 0x2A: // SLT (Set on Less Than)
-                if ((int32_t)registers[rs] < (int32_t)registers[rt])
-                registers[rd] = 1;
+                if ((int32_t)Reigsters[rs] < (int32_t)Reigsters[rt])
+                Reigsters[rd] = 1;
                 else
-                registers[rd] = 0;
+                Reigsters[rd] = 0;
                 break;
             case 0x00: // SLL (Shift Left Logical)
-                registers[rd] = registers[rt] << shamt;
+                Reigsters[rd] = Reigsters[rt] << shamt;
                 break;
             case 0x02: // SRL (Shift Right Logical)
-                registers[rd] = registers[rt] >> shamt;
+                Reigsters[rd] = Reigsters[rt] >> shamt;
                 break;
 
             default:
@@ -77,7 +98,7 @@ void execute(uint32_t instruction) {
 
 void decode(){  
 }
-unit32_t fetch(Registers *r) {
+unit32_t fetch(Reigsters *r) {
     uint32_t instruction = memory[r->pc / 4]; // Fetch the instruction from memory
     r->pc += 4; // Increment the program counter
     return instruction;

@@ -130,6 +130,7 @@ void fetch_instruction(CPUState *cpu) {
     cpu->instr = *(uint32_t *)(cpu->mem + cpu->pc);
     
     // Convert from big-endian to little-endian if necessary
+    // 빅 엔디안에서 리틀 엔디안으로 변환
     cpu->instr = ((cpu->instr & 0xFF000000) >> 24) |
                  ((cpu->instr & 0x00FF0000) >> 8) |
                  ((cpu->instr & 0x0000FF00) << 8) |
