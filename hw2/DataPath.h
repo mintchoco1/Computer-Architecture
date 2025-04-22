@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define Mem_size 2048
+#define Mem_size 10000
 
 uint32_t mem[Mem_size];
 
@@ -56,20 +56,17 @@ void initializeReigsters(Reigsters *r) {
     r->Reg[29] = 0x10000000;//SP
 }
 
-// read data from the registers
-void RF_Read(uint8_t RdReg1, uint8_t RdReg2) {
-    ReadData1 = Register[RdReg1];
-    ReadData2 = Register[RdReg2];
-}
-
 void set_control_signals(instruction inst) {
     memset(&control, 0, sizeof(Control_Signal)); // 모든 신호 기본값 0
 
     // R-type 명령어 (opcode = 0)
     if (inst.opcode == 0x00) {
+        control.RegDst = 1; // R-type 명령어는 rd에 결과 저장
+        control.RegWrite = 1; // 레지스터에 쓰기
+        control.ALUOP = inst.funct; // ALU 연산 코드 설정
+
         switch (inst.funct) {
             case 0x20: // ADD
-                control.RegDst = 1;
             case 0x21: // ADDU
             case 0x24: // AND
             case 0x25: // OR
@@ -79,7 +76,7 @@ void set_control_signals(instruction inst) {
             case 0x00: // SLL
             case 0x02: // SRL
             case 0x22: // SUB
-            case 0x23: // SUBU
+            case 0x23: // SUBU`
                 control.RegDst = 1;
                 control.ALUSrc = (inst.funct == 0x00 || inst.funct == 0x02); // shift 연산은 shamt 사용
                 control.RegWrite = 1;
@@ -87,6 +84,7 @@ void set_control_signals(instruction inst) {
                 break;
             case 0x08: // JR
                 control.JumpReg = 1;
+                control.RegWrite = 0; // 레지스터에 쓰지 않음
                 break;
             case 0x09: // JALR
                 control.RegDst = 1;
@@ -100,9 +98,11 @@ void set_control_signals(instruction inst) {
 
     // I-type 명령어
     else {
+        control.Regdest = 0; // I-type 명령어는 rt에 결과 저장
+        control.ALUSrc = 1; // ALU의 두 번째 피연산자로 immediate 사용
+
         switch (inst.opcode) {
             case 0x08: // ADDI
-                control.ALUSrc = 1;
                 control.RegWrite = 1;
                 control.ALUOp = 0x20;
                 break;
@@ -145,7 +145,6 @@ void set_control_signals(instruction inst) {
                 control.ALUOp = 0x23; // 분기를 위한 sub
                 break;
             case 0x23: // LW
-                control.ALUSrc = 1;
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
@@ -153,14 +152,12 @@ void set_control_signals(instruction inst) {
                 break;
             case 0x24: // LBU
             case 0x25: // LHU
-                control.ALUSrc = 1;
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
                 control.ALUOp = 0x20;
                 break;
             case 0x30: // LL
-                control.ALUSrc = 1;
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
@@ -191,6 +188,14 @@ void set_control_signals(instruction inst) {
     }
 }
 
+uint32_t Alu_Control(){
+    
+}
+
+unit32_t fetch(){
+    
+}
+
 void execute(uint32_t instruction) {
     uint32_t opcode = (instruction >> 26) & 0x3F;
     uint8_t rs = (instruction >> 21) & 0x1F;
@@ -219,20 +224,20 @@ instruction decode(instruction inst) {
         inst.rd = (inst.raw >> 11) & 0x1F;
         inst.shamt = (inst.raw >> 6) & 0x1F;
         inst.funct = inst.raw & 0x3F;
-        inst.type = R_TYPE;
+        //inst.type = R_TYPE;
     } else if (inst.opcode == 0x02 || inst.opcode == 0x03) { // J-type
         inst.address = inst.raw & 0x3FFFFFF;
-        inst.type = J_TYPE;
+        //inst.type = J_TYPE;
     } else { // I-type
         inst.rs = (inst.raw >> 21) & 0x1F;
         inst.rt = (inst.raw >> 16) & 0x1F;
         inst.immediate = inst.raw & 0xFFFF;
-        inst.type = I_TYPE;
+        //inst.type = I_TYPE;
     }
     return inst;
 }
 
-void write_back(Instruction inst, uint32_t result) {
+void write_back(instruction inst, uint32_t result) {
     if (!control.RegWrite) return;
 
     uint8_t dest = control.RegDst ? inst.rd : inst.rt;
