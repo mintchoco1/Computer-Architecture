@@ -9,7 +9,7 @@ uint32_t mem[Mem_size];
 typedef struct{
     uint32_t Reg[32]; // 32 Reigsters
     int pc; // program counter
-} Reigsters;
+} Registers;
 
 typedef struct {
     int RegDest;
@@ -18,36 +18,31 @@ typedef struct {
     int RegWrite;
     int MemRead;
     int MemWrite;
+    int Jump;
+    int JumpReg;
+    int JumpLink;
     uint8_t ALUOP;
     int Branch; 
 } Control_Signal;   
 
-typedef struct instruction {
+typedef struct{
     uint8_t opcode;
     uint8_t rs;
     uint8_t rt;
     uint8_t rd;
     uint8_t shamt;
     uint8_t funct;
-    uint32_t immediate;
+    uint16_t immediate;
     uint32_t address;
-} instruction;
+    uint32_t raw; // 전체 명령어
+} Instruction;
 
-typedef enum {
-    ALU_ADD,
-    ALU_SUB,
-    ALU_AND,
-    ALU_OR,
-    ALU_NOR,
-    ALU_SLT,
-    ALU_SLTU,
-    ALU_SLL,
-    ALU_SRL,
-    ALU_LUI,
-    ALU_INVALID
-} ALUControlSignal;
+Registers Regs;
+Control_Signal control;
 
-void initializeReigsters(Reigsters *r) {
+uint32_t instruction_count = 0;
+
+void init_Reigsters(Regs *r) {
     for (int i = 0; i < 32; i++){
         r->Reg[i] = 0;
     }
@@ -56,12 +51,12 @@ void initializeReigsters(Reigsters *r) {
     r->Reg[29] = 0x10000000;//SP
 }
 
-void set_control_signals(instruction inst) {
+void set_control_signals(Instruction inst) {
     memset(&control, 0, sizeof(Control_Signal)); // 모든 신호 기본값 0
 
     // R-type 명령어 (opcode = 0)
     if (inst.opcode == 0x00) {
-        control.RegDst = 1; // R-type 명령어는 rd에 결과 저장
+        control.RegDest = 1; // R-type 명령어는 rd에 결과 저장
         control.RegWrite = 1; // 레지스터에 쓰기
         control.ALUOP = inst.funct; // ALU 연산 코드 설정
 
@@ -76,105 +71,105 @@ void set_control_signals(instruction inst) {
             case 0x00: // SLL
             case 0x02: // SRL
             case 0x22: // SUB
-            case 0x23: // SUBU`
-                control.RegDst = 1;
-                control.ALUSrc = (inst.funct == 0x00 || inst.funct == 0x02); // shift 연산은 shamt 사용
+            case 0x23: // SUBU
+                control.RegDest = 1;
+                control.AluSrc = (inst.funct == 0x00 || inst.funct == 0x02); // shift 연산은 shamt 사용
                 control.RegWrite = 1;
-                control.ALUOp = inst.funct;
+                control.ALUOP = inst.funct;
                 break;
             case 0x08: // JR
                 control.JumpReg = 1;
                 control.RegWrite = 0; // 레지스터에 쓰지 않음
                 break;
             case 0x09: // JALR
-                control.RegDst = 1;
+                control.RegDest = 1;
                 control.RegWrite = 1;
                 control.JumpReg = 1;
                 control.JumpLink = 1;
-                control.ALUOp = 0x09;
+                control.ALUOP = 0x09;
                 break;
         }
     }
 
     // I-type 명령어
     else {
-        control.Regdest = 0; // I-type 명령어는 rt에 결과 저장
-        control.ALUSrc = 1; // ALU의 두 번째 피연산자로 immediate 사용
+        control.RegDest = 0; // I-type 명령어는 rt에 결과 저장
+        control.AluSrc = 1; // ALU의 두 번째 피연산자로 immediate 사용
 
         switch (inst.opcode) {
             case 0x08: // ADDI
                 control.RegWrite = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x09: // ADDIU
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x21;
+                control.ALUOP = 0x21;
                 break;
             case 0x0C: // ANDI
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x24;
+                control.ALUOP = 0x24;
                 break;
             case 0x0D: // ORI
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x25;
+                control.ALUOP = 0x25;
                 break;
             case 0x0A: // SLTI
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x2A;
+                control.ALUOP = 0x2A;
                 break;
             case 0x0B: // SLTIU
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x2B;
+                control.ALUOP = 0x2B;
                 break;
             case 0x0F: // LUI
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
-                control.ALUOp = 0x0F;
+                control.ALUOP = 0x0F;
                 break;
             case 0x04: // BEQ
                 control.Branch = 1;
-                control.ALUOp = 0x22;
+                control.ALUOP = 0x22;
                 break;
             case 0x05: // BNE
                 control.Branch = 1;
-                control.ALUOp = 0x23; // 분기를 위한 sub
+                control.ALUOP = 0x23; // 분기를 위한 sub
                 break;
             case 0x23: // LW
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x24: // LBU
             case 0x25: // LHU
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x30: // LL
                 control.MemToReg = 1;
                 control.RegWrite = 1;
                 control.MemRead = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x28: // SB
             case 0x29: // SH
             case 0x2B: // SW
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.MemWrite = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x38: // SC
-                control.ALUSrc = 1;
+                control.AluSrc = 1;
                 control.RegWrite = 1;
                 control.MemWrite = 1;
-                control.ALUOp = 0x20;
+                control.ALUOP = 0x20;
                 break;
             case 0x02: // J
                 control.Jump = 1;
@@ -188,35 +183,21 @@ void set_control_signals(instruction inst) {
     }
 }
 
-uint32_t Alu_Control(){
-    
-}
-
-unit32_t fetch(){
-    
-}
-
-void execute(uint32_t instruction) {
-    uint32_t opcode = (instruction >> 26) & 0x3F;
-    uint8_t rs = (instruction >> 21) & 0x1F;
-    uint8_t rt = (instruction >> 16) & 0x1F;
-    uint8_t rd = (instruction >> 11) & 0x1F;
-    uint32_t shamt = (instruction >> 6) & 0x1F;
-    uint32_t funct = instruction & 0x3F;
-    uint32_t imm = instruction & 0xFFFF;
-    uint32_t addr = instruction & 0x3FFFFFF;
-}
-
-uint32_t memory_access(Instruction inst, uint32_t alu_result) {
-    if (control.MemRead) {
-        return *((uint32_t*)&MEMORY[alu_result]);
-    } else if (control.MemWrite) {
-        *((uint32_t*)&MEMORY[alu_result]) = REGS[inst.rt];
+Instruction fetch(){
+    Instruction inst;
+    if (Regs.pc + 4 > Mem_size) {
+        printf("Error: PC out of bounds\n");
+        exit(1);
     }
-    return alu_result;
+    inst.raw = 0;
+    for (int i = 0; i < 4; i++) {
+        inst.raw |= (mem[Regs.pc + i] << (i * 8));
+    }
+    Regs.pc += 4;
+    return inst;
 }
 
-instruction decode(instruction inst) {
+Instruction decode(Instruction inst) {
     inst.opcode = (inst.raw >> 26) & 0x3F;
     if (inst.opcode == 0x00) { // R-type
         inst.rs = (inst.raw >> 21) & 0x1F;
@@ -237,17 +218,47 @@ instruction decode(instruction inst) {
     return inst;
 }
 
-void write_back(instruction inst, uint32_t result) {
+uint32_t memory_access(Instruction inst, uint32_t alu_result) {
+    if (control.MemRead) {
+        return *((uint32_t*)&mem[alu_result]);
+    } else if (control.MemWrite) {
+        *((uint32_t*)&mem[alu_result]) = Regs[inst.rt];
+    }
+    return alu_result;
+}
+
+void write_back(Instruction inst, uint32_t result) {
     if (!control.RegWrite) return;
 
-    uint8_t dest = control.RegDst ? inst.rd : inst.rt;
+    uint8_t dest = control.RegDest ? inst.rd : inst.rt;
     if (control.JumpLink) dest = 31;
 
     if (control.MemToReg) {
-        REGS[dest] = result;
+        Regs[dest] = result;
     } else if (control.JumpLink) {
-        REGS[31] = PC;
+        Regs[31] = PC;
     } else {
-        REGS[dest] = result;
+        Regs[dest] = result;
+    }
+}
+
+void execute(uint32_t instruction) {
+    uint32_t opcode = (instruction >> 26) & 0x3F;
+    uint8_t rs = (instruction >> 21) & 0x1F;
+    uint8_t rt = (instruction >> 16) & 0x1F;
+    uint8_t rd = (instruction >> 11) & 0x1F;
+    uint32_t shamt = (instruction >> 6) & 0x1F;
+    uint32_t funct = instruction & 0x3F;
+    uint32_t imm = instruction & 0xFFFF;
+    uint32_t addr = instruction & 0x3FFFFFF;
+}
+void print_diff(uint32_t old_regs[], uint32_t old_pc) {
+    for (int i = 0; i < 32; i++) {
+        if (REGS.Reg[i] != old_regs[i]) {
+            printf("  $%d changed from 0x%08x to 0x%08x\n", i, old_regs[i], REGS.Reg[i]);
+        }
+    }
+    if (REGS.pc != old_pc) {
+        printf("  PC changed from 0x%08x to 0x%08x\n", old_pc, REGS.pc);
     }
 }
