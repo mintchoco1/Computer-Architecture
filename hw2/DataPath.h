@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define Mem_size 0x10000
 
@@ -38,8 +39,8 @@ typedef struct{
 } Instruction;
 
 Control_Signal control;
-
 uint32_t instruction_count = 0;
+uint32_t R_count = 0, I_count = 0, J_count = 0;
 
 void init_Registers(Registers *r) {
     for (int i = 0; i < 32; i++){
@@ -221,7 +222,7 @@ Instruction fetch(Registers *r, ) {
     }
     inst.raw = 0;
     for (int i = 0; i < 4; i++) {
-        inst.raw |= (mem[r->pc + i] << (i * 8));
+        inst.raw = (inst.raw << 8) | (mem[r->pc + i] & 0xFF);
     }
     r->pc += 4;
     return inst;
