@@ -16,24 +16,25 @@ int main(int argc, char *argv[]) {
     size_t index = 0;
     while (fread(&temp, sizeof(uint32_t), 1, fp)) {
         for (int i = 0; i < 4; i++) {
-            memory[index++] = (temp >> (8 * i)) & 0xFF;
+            mem[index++] = (temp >> (8 * i)) & 0xFF;
         }
     }
     fclose(fp);
 
     init_registers();
 
-    while (REGS.pc != 0xFFFFFFFF) {
+    while (Registers..pc != 0xFFFFFFFF) {
         uint32_t old_regs[32];
         memcpy(old_regs, REGS.Reg, sizeof(old_regs));
         uint32_t old_pc = REGS.pc;
 
         Instruction inst = fetch();
-        if (inst.raw == 0) continue;
+        if (inst.raw == 0) 
+            continue;
         instruction_count++;
 
-        inst = decode(inst);
-        set_control(inst);
+        inst = decode(&inst);
+        set_control_signals(&inst);
 
         if (control.Jump) {
             if (control.JumpLink) REGS.Reg[31] = REGS.pc;

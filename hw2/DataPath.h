@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#define Mem_size 10000
+#define Mem_size 0x10000
 
 uint32_t mem[Mem_size];
 
@@ -37,12 +37,11 @@ typedef struct{
     uint32_t raw; // 전체 명령어
 } Instruction;
 
-Registers Regs;
 Control_Signal control;
 
 uint32_t instruction_count = 0;
 
-void init_Reigsters(Regs *r) {
+void init_Registers(Registers *r) {
     for (int i = 0; i < 32; i++){
         r->Reg[i] = 0;
     }
@@ -51,16 +50,16 @@ void init_Reigsters(Regs *r) {
     r->Reg[29] = 0x10000000;//SP
 }
 
-void set_control_signals(Instruction inst) {
+void set_control_signals(Instruction *inst) {
     memset(&control, 0, sizeof(Control_Signal)); // 모든 신호 기본값 0
 
     // R-type 명령어 (opcode = 0)
-    if (inst.opcode == 0x00) {
+    if (inst->opcode == 0x00) {
         control.RegDest = 1; // R-type 명령어는 rd에 결과 저장
         control.RegWrite = 1; // 레지스터에 쓰기
-        control.ALUOP = inst.funct; // ALU 연산 코드 설정
+        control.ALUOP = inst->funct; // ALU 연산 코드 설정
 
-        switch (inst.funct) {
+        switch (inst->funct) {
             case 0x20: // ADD
             case 0x21: // ADDU
             case 0x24: // AND
@@ -73,9 +72,9 @@ void set_control_signals(Instruction inst) {
             case 0x22: // SUB
             case 0x23: // SUBU
                 control.RegDest = 1;
-                control.AluSrc = (inst.funct == 0x00 || inst.funct == 0x02); // shift 연산은 shamt 사용
+                control.AluSrc = (inst->funct == 0x00 || inst->funct == 0x02); // shift 연산은 shamt 사용
                 control.RegWrite = 1;
-                control.ALUOP = inst.funct;
+                control.ALUOP = inst->funct;
                 break;
             case 0x08: // JR
                 control.JumpReg = 1;
@@ -96,7 +95,7 @@ void set_control_signals(Instruction inst) {
         control.RegDest = 0; // I-type 명령어는 rt에 결과 저장
         control.AluSrc = 1; // ALU의 두 번째 피연산자로 immediate 사용
 
-        switch (inst.opcode) {
+        switch (inst->opcode) {
             case 0x08: // ADDI
                 control.RegWrite = 1;
                 control.ALUOP = 0x20;
@@ -183,82 +182,103 @@ void set_control_signals(Instruction inst) {
     }
 }
 
-Instruction fetch(){
+uint32_t alu_control(uint8_t alu_op, uint32_t a, uint32_t b, uint8_t shamt) {
+    switch (alu_op) {
+        case 0x20: 
+            return a + b;            // ADD, ADDI, ADDU, ADDIU, LW, etc.
+        case 0x21: 
+            return a + b;            // ADDU
+        case 0x22: 
+            return a - b;            // SUB
+        case 0x23: 
+            return a - b;            // BNE (treated as SUB)
+        case 0x24: 
+            return a & b;            // AND, ANDI
+        case 0x25: 
+            return a | b;            // OR, ORI
+        case 0x27: 
+            return ~(a | b);         // NOR
+        case 0x2A: 
+            return ((int32_t)a < (int32_t)b); // SLT, SLTI
+        case 0x2B: 
+            return (a < b);          // SLTU, SLTIU
+        case 0x00: 
+            return b << shamt;       // SLL
+        case 0x02: 
+            return b >> shamt;       // SRL
+        case 0x0F: 
+            return b << 16;          // LUI
+        default: 
+            return 0;
+    }
+}
+
+Instruction fetch(Registers *r, ) {
     Instruction inst;
-    if (Regs.pc + 4 > Mem_size) {
+    if (r->pc + 4 > Mem_size) {
         printf("Error: PC out of bounds\n");
         exit(1);
     }
     inst.raw = 0;
     for (int i = 0; i < 4; i++) {
-        inst.raw |= (mem[Regs.pc + i] << (i * 8));
+        inst.raw |= (mem[r->pc + i] << (i * 8));
     }
-    Regs.pc += 4;
+    r->pc += 4;
     return inst;
 }
 
-Instruction decode(Instruction inst) {
-    inst.opcode = (inst.raw >> 26) & 0x3F;
-    if (inst.opcode == 0x00) { // R-type
-        inst.rs = (inst.raw >> 21) & 0x1F;
-        inst.rt = (inst.raw >> 16) & 0x1F;
-        inst.rd = (inst.raw >> 11) & 0x1F;
-        inst.shamt = (inst.raw >> 6) & 0x1F;
-        inst.funct = inst.raw & 0x3F;
+Instruction decode(Instruction *inst) {
+    inst->opcode = (inst->raw >> 26) & 0x3F;
+    if (inst->opcode == 0x00) { // R-type
+        inst->rs = (inst->raw >> 21) & 0x1F;
+        inst->rt = (inst->raw >> 16) & 0x1F;
+        inst->rd = (inst->raw >> 11) & 0x1F;
+        inst->shamt = (inst->raw >> 6) & 0x1F;
+        inst->funct = inst->raw & 0x3F;
         //inst.type = R_TYPE;
-    } else if (inst.opcode == 0x02 || inst.opcode == 0x03) { // J-type
-        inst.address = inst.raw & 0x3FFFFFF;
+    } else if (inst->opcode == 0x02 || inst->opcode == 0x03) { // J-type
+        inst->address = inst->raw & 0x3FFFFFF;
         //inst.type = J_TYPE;
     } else { // I-type
-        inst.rs = (inst.raw >> 21) & 0x1F;
-        inst.rt = (inst.raw >> 16) & 0x1F;
-        inst.immediate = inst.raw & 0xFFFF;
+        inst->rs = (inst->raw >> 21) & 0x1F;
+        inst->rt = (inst->raw >> 16) & 0x1F;
+        inst->immediate = inst->raw & 0xFFFF;
         //inst.type = I_TYPE;
     }
-    return inst;
+    return *inst;
 }
 
-uint32_t memory_access(Instruction inst, uint32_t alu_result) {
+uint32_t memory_access(Registers *r, Instruction inst, uint32_t alu_result) {
     if (control.MemRead) {
         return *((uint32_t*)&mem[alu_result]);
     } else if (control.MemWrite) {
-        *((uint32_t*)&mem[alu_result]) = Regs[inst.rt];
+        *((uint32_t*)&mem[alu_result]) = r->Reg[inst.rt];
     }
     return alu_result;
 }
 
-void write_back(Instruction inst, uint32_t result) {
-    if (!control.RegWrite) return;
-
+void write_back(Registers *r, Instruction inst, uint32_t result) {
+    if (!control.RegWrite) 
+        return;
     uint8_t dest = control.RegDest ? inst.rd : inst.rt;
-    if (control.JumpLink) dest = 31;
-
+    if (control.JumpLink) 
+        dest = 31;
     if (control.MemToReg) {
-        Regs[dest] = result;
+        r->Reg[dest] = result;
     } else if (control.JumpLink) {
-        Regs[31] = PC;
+        r->Reg[31] = r->pc;
     } else {
-        Regs[dest] = result;
+        r->Reg[dest] = result;
     }
 }
 
-void execute(uint32_t instruction) {
-    uint32_t opcode = (instruction >> 26) & 0x3F;
-    uint8_t rs = (instruction >> 21) & 0x1F;
-    uint8_t rt = (instruction >> 16) & 0x1F;
-    uint8_t rd = (instruction >> 11) & 0x1F;
-    uint32_t shamt = (instruction >> 6) & 0x1F;
-    uint32_t funct = instruction & 0x3F;
-    uint32_t imm = instruction & 0xFFFF;
-    uint32_t addr = instruction & 0x3FFFFFF;
-}
-void print_diff(uint32_t old_regs[], uint32_t old_pc) {
+void print_diff(Registers *r, uint32_t old_regs[], uint32_t old_pc) {
     for (int i = 0; i < 32; i++) {
-        if (REGS.Reg[i] != old_regs[i]) {
-            printf("  $%d changed from 0x%08x to 0x%08x\n", i, old_regs[i], REGS.Reg[i]);
+        if (r->Reg[i] != old_regs[i]) {
+            printf("  $%d changed from 0x%08x to 0x%08x\n", i, old_regs[i], r->Reg[i]);
         }
     }
-    if (REGS.pc != old_pc) {
-        printf("  PC changed from 0x%08x to 0x%08x\n", old_pc, REGS.pc);
+    if (r->pc != old_pc) {
+        printf("  PC changed from 0x%08x to 0x%08x\n", old_pc, r->pc);
     }
 }
