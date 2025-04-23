@@ -214,18 +214,17 @@ uint32_t alu_control(uint8_t alu_op, uint32_t a, uint32_t b, uint8_t shamt) {
     }
 }
 
-Instruction fetch(Registers *r, ) {
-    Instruction inst;
+Instruction fetch(Registers *r, uint8_t *mem, Instruction *inst) {
     if (r->pc + 4 > Mem_size) {
         printf("Error: PC out of bounds\n");
         exit(1);
     }
-    inst.raw = 0;
+    inst->raw = 0;
     for (int i = 0; i < 4; i++) {
-        inst.raw = (inst.raw << 8) | (mem[r->pc + i] & 0xFF);
+        inst->raw = (inst->raw << 8) | (mem[r->pc + i] & 0xFF);
     }
     r->pc += 4;
-    return inst;
+    return *inst;
 }
 
 Instruction decode(Instruction *inst) {
