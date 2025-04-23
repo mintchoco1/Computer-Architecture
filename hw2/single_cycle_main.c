@@ -12,18 +12,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    uint32_t temp;
+    uint32_t buffer;
     size_t index = 0;
-    while (fread(&temp, sizeof(uint32_t), 1, fp)) {
+    while (fread(&buffer, sizeof(uint32_t), 1, fp)) {
         for (int i = 0; i < 4; i++) {
-            mem[index++] = (temp >> (8 * i)) & 0xFF;
+            mem[index++] = (buffer >> (8 * i)) & 0xFF;
         }
     }
     fclose(fp);
 
     init_registers();
 
-    while (Registers..pc != 0xFFFFFFFF) {
+    while (Registers.pc != 0xFFFFFFFF) {
         uint32_t old_regs[32];
         memcpy(old_regs, REGS.Reg, sizeof(old_regs));
         uint32_t old_pc = REGS.pc;
