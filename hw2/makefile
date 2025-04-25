@@ -1,26 +1,24 @@
-# 컴파일러 및 플래그 설정
+# 컴파일러와 옵션
 CC = gcc
 CFLAGS = -Wall -Wextra -O2
 
-# 타겟 실행 파일 이름
+# 파일 이름 설정
 TARGET = mips_emulator
-
-# 소스 및 헤더 파일
-SRC = single_cycle_main.c
+SRC = single_cycle_main.c dataPath.c
+OBJS = $(SRC:.c=.o)
 DEPS = dataPath.h
-OBJ = $(SRC:.c=.o)
 
-# 기본 빌드 규칙
+# 기본 목표
 all: $(TARGET)
 
-# 타겟 링크
-$(TARGET): $(OBJ)
+# 링크 규칙
+$(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
-# 오브젝트 파일 컴파일 시, 헤더에 의존성 추가
+# 소스 -> 오브젝트 컴파일 규칙
 %.o: %.c $(DEPS)
 	$(CC) $(CFLAGS) -c $<
 
 # 정리
 clean:
-	rm -f $(TARGET) $(OBJ)
+	rm -f $(TARGET) $(OBJS)
