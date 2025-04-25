@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
 
         Instruction inst;
         fetch(&r, mem, &inst);
-        if (inst.raw == 0) {
+        if (inst.mips_inst == 0) {
             printf("NOP\n\n");
             continue;
         }
@@ -58,6 +58,8 @@ int main(int argc, char *argv[]) {
     printf("\nProgram finished.\n");
     printf("Return value ($v0): %u\n", r.Reg[2]);
     printf("Total instructions executed: %u\n", instruction_count);
+    printf("Memory access instructions: %u\n", mem_access_count);
+    printf("Taken branches: %u\n", branch_taken_count);
     printf("R-type instructions: %u\n", R_count);
     printf("I-type instructions: %u\n", I_count);
     printf("J-type instructions: %u\n", J_count);
