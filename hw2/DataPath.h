@@ -52,167 +52,118 @@ void init_Registers(Registers *r) {
 }
 
 void set_control_signals(Instruction *inst) {
-    memset(&control, 0, sizeof(Control_Signal)); // 모든 신호 기본값 0
+    memset(&control, 0, sizeof(Control_Signal));
 
-    // R-type 명령어 (opcode = 0)
     if (inst->opcode == 0x00) {
-        control.RegDest = 1; // R-type 명령어는 rd에 결과 저장
-        control.RegWrite = 1; // 레지스터에 쓰기
-        control.ALUOP = inst->funct; // ALU 연산 코드 설정
+        // R-type
+        control.RegDest = 1;
+        control.RegWrite = 1;
+        control.ALUOP = 0b10;
 
         switch (inst->funct) {
-            case 0x20: // ADD
-            case 0x21: // ADDU
-            case 0x24: // AND
-            case 0x25: // OR
-            case 0x27: // NOR
-            case 0x2A: // SLT
-            case 0x2B: // SLTU
-            case 0x00: // SLL
-            case 0x02: // SRL
-            case 0x22: // SUB
-            case 0x23: // SUBU
-                control.RegDest = 1;
-                control.AluSrc = (inst->funct == 0x00 || inst->funct == 0x02); // shift 연산은 shamt 사용
-                control.RegWrite = 1;
-                control.ALUOP = inst->funct;
-                break;
-            case 0x08: // JR
+            case 0x20:// add
+            case 0x21:// addu
+            case 0x22:// sub
+            case 0x23:// subu
+            case 0x24:// and 
+            case 0x25:// or
+            case 0x27:// nor
+            case 0x2A:// slt
+            case 0x2B:// sltu
+            case 0x00:// sll
+            case 0x02://
+                break; // 계산은 ALU에서 funct로 처리
+            case 0x08: // jr
                 control.JumpReg = 1;
-                control.RegWrite = 0; // 레지스터에 쓰지 않음
+                control.RegWrite = 0;
                 break;
-            case 0x09: // JALR
-                control.RegDest = 1;
-                control.RegWrite = 1;
+            case 0x09: // jalr
                 control.JumpReg = 1;
                 control.JumpLink = 1;
-                control.ALUOP = 0x09;
                 break;
         }
-    }
-
-    // I-type 명령어
-    else {
-        control.RegDest = 0; // I-type 명령어는 rt에 결과 저장
-        control.AluSrc = 1; // ALU의 두 번째 피연산자로 immediate 사용
+    } else if (inst->opcode == 0x02 || inst->opcode == 0x03) {
+        // J-type
+        control.Jump = 1;
+        if (inst->opcode == 0x03) {
+            control.JumpLink = 1;
+            control.RegWrite = 1;
+        }
+    } else {
+        // I-type
+        control.RegDest = 0;
+        control.AluSrc = 1;
 
         switch (inst->opcode) {
-            case 0x08: // ADDI
+            case 0x08: 
+            case 0x09: 
+            case 0x0C: 
+            case 0x0D:
+            case 0x0A: 
+            case 0x0B: 
+            case 0x0F:
                 control.RegWrite = 1;
-                control.ALUOP = 0x20;
+                control.ALUOP = 0b00;
                 break;
-            case 0x09: // ADDIU
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x21;
-                break;
-            case 0x0C: // ANDI
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x24;
-                break;
-            case 0x0D: // ORI
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x25;
-                break;
-            case 0x0A: // SLTI
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x2A;
-                break;
-            case 0x0B: // SLTIU
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x2B;
-                break;
-            case 0x0F: // LUI
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.ALUOP = 0x0F;
-                break;
-            case 0x04: // BEQ
-                control.Branch = 1;
-                control.ALUOP = 0x22;
-                break;
-            case 0x05: // BNE
-                control.Branch = 1;
-                control.ALUOP = 0x23; // 분기를 위한 sub
-                break;
-            case 0x23: // LW
+            case 0x23: 
+            case 0x24: 
+            case 0x25: 
+            case 0x30:
+                control.MemRead = 1;
                 control.MemToReg = 1;
                 control.RegWrite = 1;
-                control.MemRead = 1;
-                control.ALUOP = 0x20;
+                control.ALUOP = 0b00;
                 break;
-            case 0x24: // LBU
-            case 0x25: // LHU
-                control.MemToReg = 1;
-                control.RegWrite = 1;
-                control.MemRead = 1;
-                control.ALUOP = 0x20;
-                break;
-            case 0x30: // LL
-                control.MemToReg = 1;
-                control.RegWrite = 1;
-                control.MemRead = 1;
-                control.ALUOP = 0x20;
-                break;
-            case 0x28: // SB
-            case 0x29: // SH
-            case 0x2B: // SW
-                control.AluSrc = 1;
+            case 0x28: 
+            case 0x29: 
+            case 0x2B: 
+            case 0x38:
                 control.MemWrite = 1;
-                control.ALUOP = 0x20;
+                control.RegWrite = (inst->opcode == 0x38);
+                control.ALUOP = 0b00;
                 break;
-            case 0x38: // SC
-                control.AluSrc = 1;
-                control.RegWrite = 1;
-                control.MemWrite = 1;
-                control.ALUOP = 0x20;
-                break;
-            case 0x02: // J
-                control.Jump = 1;
-                break;
-            case 0x03: // JAL
-                control.Jump = 1;
-                control.JumpLink = 1;
-                control.RegWrite = 1;
+            case 0x04: 
+            case 0x05:
+                control.Branch = 1;
+                control.ALUOP = 0b01;
                 break;
         }
     }
 }
 
-uint32_t alu_control(uint8_t alu_op, uint32_t a, uint32_t b, uint8_t shamt) {
-    switch (alu_op) {
-        case 0x20: 
-            return a + b;            // ADD, ADDI, ADDU, ADDIU, LW, etc.
-        case 0x21: 
-            return a + b;            // ADDU
-        case 0x22: 
-            return a - b;            // SUB
-        case 0x23: 
-            return a - b;            // BNE (treated as SUB)
-        case 0x24: 
-            return a & b;            // AND, ANDI
-        case 0x25: 
-            return a | b;            // OR, ORI
-        case 0x27: 
-            return ~(a | b);         // NOR
-        case 0x2A: 
-            return ((int32_t)a < (int32_t)b); // SLT, SLTI
-        case 0x2B: 
-            return (a < b);          // SLTU, SLTIU
-        case 0x00: 
-            return b << shamt;       // SLL
-        case 0x02: 
-            return b >> shamt;       // SRL
-        case 0x0F: 
-            return b << 16;          // LUI
-        default: 
-            return 0;
+uint8_t alu_control(uint8_t alu_op, uint8_t funct) {
+    if (alu_op == 0b00) 
+        return 0b0010; // ADD
+    else if (alu_op == 0b01) 
+        return 0b0110; // SUB
+    else if (alu_op == 0b10) {
+        switch (funct) {
+            case 0x20:
+                return 0b0010; // ADD
+            case 0x21: 
+                return 0b0010; // ADDU
+            case 0x22:
+                return 0b0110; // SUB 
+            case 0x23:
+                return 0b0110; // SUBU
+            case 0x24: 
+                return 0b0000; // AND
+            case 0x25: 
+                return 0b0001; // OR
+            case 0x2A: 
+                return 0b0111; // SLT
+            case 0x27: 
+                return 0b1100; // NOR
+            case 0x00: 
+                return 0b1000; // SLL
+            case 0x02: 
+                return 0b1001; // SRL
+            default: return 0b1111;   // Undefined
+        }
     }
+    return 0b1111; // Fallback
 }
+
 
 Instruction fetch(Registers *r, uint8_t *mem, Instruction *inst) {
     if (r->pc + 4 > Mem_size) {
@@ -250,13 +201,43 @@ Instruction decode(Instruction *inst) {
 
 void execute(Registers *r, Instruction *inst, uint32_t *alu_result) {
     uint32_t operand1 = r->Reg[inst->rs];
-    uint32_t operand2 = control.AluSrc ? (int16_t)inst->immediate : r->Reg[inst->rt];//alusrc에 따라 rt, immediate 사용
-    *alu_result = alu_control(control.ALUOP, operand1, operand2, inst->shamt);
+    uint32_t operand2 = control.AluSrc ? sign_extend(inst->immediate) : r->Reg[inst->rt];
+
+    uint8_t signal = alu_control(control.ALUOP, inst->funct);
+    switch (signal) {
+        case 0b0000: //AND
+            *alu_result = operand1 & operand2; 
+            break;
+        case 0b0001: //OR   
+            *alu_result = operand1 | operand2; 
+            break;
+        case 0b0010: //ADD
+            *alu_result = operand1 + operand2; 
+            break;
+        case 0b0110: 
+            *alu_result = operand1 - operand2; 
+            break;
+        case 0b0111: 
+            *alu_result = ((int32_t)operand1 < (int32_t)operand2); 
+            break;
+        case 0b1100: 
+            *alu_result = ~(operand1 | operand2); 
+            break;
+        case 0b1000: 
+            *alu_result = operand2 << inst->shamt; 
+            break; // SLL
+        case 0b1001: 
+            *alu_result = operand2 >> inst->shamt; 
+            break; // SRL
+        default: 
+            *alu_result = 0; 
+            break;
+    }
 
     if (control.Branch) {
         int taken = 0;
-        if (inst->opcode == 0x04 && *alu_result == 0) taken = 1; // beq
-        else if (inst->opcode == 0x05 && *alu_result != 0) taken = 1; // bne
+        if (inst->opcode == 0x04 && *alu_result == 0) taken = 1;
+        else if (inst->opcode == 0x05 && *alu_result != 0) taken = 1;
         if (taken) r->pc = r->pc + ((int16_t)inst->immediate << 2);
     } else if (control.Jump) {
         if (control.JumpLink) r->Reg[31] = r->pc;
@@ -282,7 +263,6 @@ uint32_t memory_access(Registers *r, Instruction inst, uint32_t alu_result) {
     return alu_result;
 }
 
-
 void write_back(Registers *r, Instruction inst, uint32_t result) {
     if (!control.RegWrite) 
         return;
@@ -307,4 +287,8 @@ void print_diff(Registers *r, uint32_t old_regs[], uint32_t old_pc) {
     if (r->pc != old_pc) {
         printf("  PC changed from 0x%08x to 0x%08x\n", old_pc, r->pc);
     }
+}
+
+int32_t sign_extend(uint16_t imm) {
+    return (int16_t)imm;
 }
