@@ -248,14 +248,40 @@ Instruction decode(Instruction *inst) {
     return *inst;
 }
 
+void execute(Registers *r, Instruction *inst, uint32_t *alu_result) {
+    uint32_t operand1 = r->Reg[inst->rs];
+    uint32_t operand2 = control.AluSrc ? (int16_t)inst->immediate : r->Reg[inst->rt];//alusrc에 따라 rt, immediate 사용
+    *alu_result = alu_control(control.ALUOP, operand1, operand2, inst->shamt);
+
+    if (control.Branch) {
+        int taken = 0;
+        if (inst->opcode == 0x04 && *alu_result == 0) taken = 1; // beq
+        else if (inst->opcode == 0x05 && *alu_result != 0) taken = 1; // bne
+        if (taken) r->pc = r->pc + ((int16_t)inst->immediate << 2);
+    } else if (control.Jump) {
+        if (control.JumpLink) r->Reg[31] = r->pc;
+        r->pc = (r->pc & 0xF0000000) | (inst->address << 2);
+    } else if (control.JumpReg) {
+        if (control.JumpLink) r->Reg[31] = r->pc;
+        r->pc = r->Reg[inst->rs];
+    }
+}
+
 uint32_t memory_access(Registers *r, Instruction inst, uint32_t alu_result) {
     if (control.MemRead) {
-        return *((uint32_t*)&mem[alu_result]);
+        uint32_t val = 0;
+        for (int i = 0; i < 4; i++) {
+            val |= mem[alu_result + i] << (8 * i);
+        }
+        return val;
     } else if (control.MemWrite) {
-        *((uint32_t*)&mem[alu_result]) = r->Reg[inst.rt];
+        for (int i = 0; i < 4; i++) {
+            mem[alu_result + i] = (r->Reg[inst.rt] >> (8 * i)) & 0xFF;
+        }
     }
     return alu_result;
 }
+
 
 void write_back(Registers *r, Instruction inst, uint32_t result) {
     if (!control.RegWrite) 
