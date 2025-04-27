@@ -3,11 +3,11 @@
 
 #include <stdint.h>
 
-#define Mem_size 0x10000
+#define Mem_size 0x2000000
 
 typedef struct {
     uint32_t Reg[32];
-    int pc;
+    uint32_t pc;
 } Registers;
 
 typedef struct {
@@ -37,9 +37,10 @@ typedef struct {
 } Instruction;
 
 // 전역변수 'extern'으로 선언
-extern uint32_t mem[Mem_size];
+extern uint8_t mem[Mem_size];
 extern Control_Signal control;
-extern uint32_t instruction_count, hi, lo;
+extern uint32_t instruction_count;
+extern uint64_t hi, lo;
 extern uint32_t R_count, I_count, J_count;
 extern uint32_t mem_access_count;
 extern uint32_t branch_taken_count;
@@ -54,6 +55,7 @@ void execute(Registers *r, Instruction *inst, uint32_t *alu_result);
 uint32_t memory_access(Registers *r, Instruction inst, uint32_t alu_result);
 void write_back(Registers *r, Instruction inst, uint32_t result);
 void print_diff(Registers *r, uint32_t old_regs[], uint32_t old_pc);
+void run(Registers *r, uint8_t *mem);
 int32_t sign_extend(uint16_t imm);
 
 #endif

@@ -4,10 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-uint32_t mem[Mem_size];
+uint8_t mem[Mem_size];
 Control_Signal control;
 uint32_t instruction_count = 0;
-uint32_t hi = 0, lo = 0;
+uint64_t hi = 0, lo = 0;
 uint32_t R_count = 0, I_count = 0, J_count = 0;
 uint32_t mem_access_count = 0;
 uint32_t branch_taken_count = 0;
@@ -184,15 +184,15 @@ uint8_t alu_control(uint8_t alu_op, uint8_t funct) {
     return 18; // Fallback
 }
 
-
 Instruction fetch(Registers *r, uint8_t *mem, Instruction *inst) {
-    if (r->pc + 4 > Mem_size) {
-        printf("Error: PC out of bounds\n");
+    uint32_t pc_index = r->pc - 0x00400000; // 주소 변환 (예시 베이스 주소)
+    if (pc_index + 4 > Mem_size) {
+        printf("Error: PC out of bounds (0x%08x)\n", r->pc);
         exit(1);
     }
     inst->mips_inst = 0;
     for (int i = 0; i < 4; i++) {
-        inst->mips_inst = (inst->mips_inst << 8) | (mem[r->pc + i] & 0xFF);
+        inst->mips_inst = (inst->mips_inst << 8) | (mem[pc_index + i] & 0xFF);
     }
     r->pc += 4;
     return *inst;
@@ -222,7 +222,7 @@ Instruction decode(Instruction *inst) {
 
 void execute(Registers *r, Instruction *inst, uint32_t *alu_result) {
     uint32_t operand1 = r->Reg[inst->rs];
-    uint32_t operand2 = control.AluSrc ? sign_extend(inst->immediate) : r->Reg[inst->rt];
+    uint32_t operand2 = control.AluSrc ? (uint32_t)sign_extend(inst->immediate) : r->Reg[inst->rt];
 
     uint8_t signal = alu_control(control.ALUOP, inst->funct);
     switch (signal) {
@@ -322,24 +322,30 @@ void execute(Registers *r, Instruction *inst, uint32_t *alu_result) {
                     taken = ((int32_t)operand1 >= 0); // bgez
                 break;
         }
-        if (taken)
+        if (taken){
             branch_taken_count++; //실제 분기 발생 시 카운트 
-            r->pc = r->pc + ((int16_t)inst->immediate << 2);
+            r->pc = r->pc + 4 + ((int16_t)inst->immediate << 2);
+        }
     } else if (control.Jump) {
         if (control.JumpLink) 
-            r->Reg[31] = r->pc;
-        
-        r->pc = (r->pc & 0xF0000000) | (inst->address << 2);
+            r->Reg[31] = r->pc;       
+            
+        r->pc = (r->pc & 0xf0000000) | (inst->address << 2);
     
     } else if (control.JumpReg) {
         if (control.JumpLink) 
             r->Reg[31] = r->pc;
-
+            
         r->pc = r->Reg[inst->rs];
     }
 }
 
 uint32_t memory_access(Registers *r, Instruction inst, uint32_t alu_result) {
+    uint32_t mem_index = alu_result - 0x80000000; // 예시 데이터 세그먼트 베이스 주소
+    if (mem_index + 4 >= Mem_size) {
+        printf("Memory access out of bounds: 0x%08x\n", alu_result);
+        exit(1);
+    }
     if (control.MemRead) {
         mem_access_count++; //메모리 읽기 카운트 증가
         uint32_t val = 0;
@@ -378,6 +384,39 @@ void print_diff(Registers *r, uint32_t old_regs[], uint32_t old_pc) {
     }
     if (r->pc != old_pc) {
         printf("  PC changed from 0x%08x to 0x%08x\n", old_pc, r->pc);
+    }
+}
+
+void run(Registers *r, uint8_t *mem) {
+    Instruction inst;
+    while (r->pc != 0xffffffff) {
+        uint32_t old_regs[32];
+        memcpy(old_regs, r->Reg, sizeof(old_regs));
+        uint32_t old_pc = r->pc;
+
+        fetch(r, mem, &inst);
+        if (inst.mips_inst == 0) {
+            printf("NOP\n\n");
+            r->pc += 4;  
+            continue;
+        }
+
+        instruction_count++;
+        decode(&inst);
+        set_control_signals(&inst);
+
+        uint32_t alu_result = 0;
+        execute(r, &inst, &alu_result);
+
+        uint32_t mem_result = memory_access(r, inst, alu_result);
+        write_back(r, inst, mem_result);
+
+        print_diff(r, old_regs, old_pc);
+        printf("--------------------------\n");
+
+        if (inst.opcode == 0x00) R_count++;
+        else if (inst.opcode == 0x02 || inst.opcode == 0x03) J_count++;
+        else I_count++;
     }
 }
 

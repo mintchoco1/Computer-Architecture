@@ -4,9 +4,9 @@ CFLAGS = -Wall -Wextra -O2
 
 # 파일 이름 설정
 TARGET = mips_emulator
-SRC = single_cycle_main.c dataPath.c
+SRC = single_cycle_main.c datapath.c
 OBJS = $(SRC:.c=.o)
-DEPS = dataPath.h
+DEPS = datapath.h
 
 # 기본 목표
 all: $(TARGET)

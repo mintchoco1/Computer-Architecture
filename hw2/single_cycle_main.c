@@ -1,5 +1,8 @@
-#include "dataPath.h"
+#include "datapath.h"
 #include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -26,35 +29,7 @@ int main(int argc, char *argv[]) {
     Registers r;
     init_Registers(&r);
 
-    while (r.pc != 0xFFFFFFFF) {
-        uint32_t old_regs[32];
-        memcpy(old_regs, r.Reg, sizeof(old_regs));
-        uint32_t old_pc = r.pc;
-
-        Instruction inst;
-        fetch(&r, mem, &inst);
-        if (inst.mips_inst == 0) {
-            printf("NOP\n\n");
-            continue;
-        }
-
-        instruction_count++;
-        decode(&inst);
-        set_control_signals(&inst);
-
-        uint32_t alu_result = 0;
-        execute(&r, &inst, &alu_result);
-
-        uint32_t mem_result = memory_access(&r, inst, alu_result);
-        write_back(&r, inst, mem_result);
-
-        print_diff(&r, old_regs, old_pc);
-        printf("--------------------------\n");
-
-        if (inst.opcode == 0x00) R_count++;
-        else if (inst.opcode == 0x02 || inst.opcode == 0x03) J_count++;
-        else I_count++;
-    }
+    run(&r, mem);
 
     printf("\nProgram finished.\n");
     printf("Return value ($v0): %u\n", r.Reg[2]);
