@@ -59,6 +59,7 @@
   "files.associations": {
     "random": "c",
     "DataPath.H": "cpp",
-    "stdint.h": "c"
+    "stdint.h": "c",
+    "datapath2.h": "c"
   }
 }

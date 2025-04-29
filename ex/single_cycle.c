@@ -4,7 +4,7 @@
 int main(void) {
 
 
-    FILE* file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw2\\test_prog\\fib.bin", "rb"); // "filename.bin" => filename 변경해서 다른 파일 넣기.
+    FILE* file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\hw2\\test_prog\\gcd.bin", "rb"); // "filename.bin" => filename 변경해서 다른 파일 넣기.
     // fopen함수의 첫번째 매개변수에 아래 값을 넣어주면 실행가능.
     // "sum.bin"
     // "func.bin"

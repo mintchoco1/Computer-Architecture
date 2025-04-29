@@ -200,6 +200,7 @@ Instruction fetch(Registers *r, uint8_t *mem, Instruction *inst) {
 
 Instruction decode(Instruction *inst) {
     inst->opcode = (inst->mips_inst >> 26) & 0x3F;
+    
 
     if (inst->opcode == 0x00) { // R-type
         inst->rs = (inst->mips_inst >> 21) & 0x1F;
