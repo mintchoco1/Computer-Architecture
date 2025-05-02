@@ -41,7 +41,7 @@ void init_ctrl(Ctrl* c) {
     c->ex_skip = 0;
     c->ma_skip = 0;
 }
-
+//
 void path_ctrl(Ctrl* c, uint32_t* opcode, int step) {
     if (step == 2) { // execute step
         if (opcode[0] == 0) { // R type

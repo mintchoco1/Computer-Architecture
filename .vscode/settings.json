@@ -60,6 +60,8 @@
     "random": "c",
     "DataPath.H": "cpp",
     "stdint.h": "c",
-    "datapath2.h": "c"
+    "datapath2.h": "c",
+    "stdio.h": "c",
+    "stdbool.h": "c"
   }
 }

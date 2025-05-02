@@ -21,6 +21,24 @@ void init_Registers(Registers *r) {
     r->Reg[29] = 0x10000000;//SP
 }
 
+void init_control_signals(Control_Signal *control) {
+    control->RegDest = 0;
+    control->AluSrc = 0;
+    control->MemToReg = 0;
+    control->RegWrite = 0;
+    control->MemRead = 0;
+    control->MemWrite = 0;
+    control->Jump = 0;
+    control->JumpReg = 0;
+    control->JumpLink = 0;
+    control->ALUOP = 0;
+    control->Branch = 0; 
+}
+
+int32_t sign_extend(uint16_t imm) {
+    return (int16_t)imm;
+}
+
 void set_control_signals(Instruction *inst) {
     memset(&control, 0, sizeof(Control_Signal));
 
@@ -200,7 +218,6 @@ Instruction fetch(Registers *r, uint8_t *mem, Instruction *inst) {
 
 Instruction decode(Instruction *inst) {
     inst->opcode = (inst->mips_inst >> 26) & 0x3F;
-    
 
     if (inst->opcode == 0x00) { // R-type
         inst->rs = (inst->mips_inst >> 21) & 0x1F;
