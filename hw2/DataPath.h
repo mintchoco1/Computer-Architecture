@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define Mem_size 0x2000000
+#define Mem_size 0x1000000
 
 typedef struct {
     uint32_t Reg[32];

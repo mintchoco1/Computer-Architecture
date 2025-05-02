@@ -807,17 +807,14 @@ int main(int argc, char *argv[])
     load_binary_file(argv[1]);
     init_registers();
 
-    /* Print register map (for debugging) */
     if (argc > 2 && strcmp(argv[2], "verbose") == 0)
     {
         print_register_map();
     }
 
-    /* Run simulation */
     printf("\nStarting MIPS single-cycle simulation...\n");
     datapath_single_cycle();
 
-    /* Print statistics */
     print_statistics();
 
     return 0;
