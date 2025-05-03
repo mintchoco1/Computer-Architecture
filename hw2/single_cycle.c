@@ -5,7 +5,6 @@
 
 uint8_t memory[MEMORY_SIZE];
 
-// Counters for statistics
 int instruction_count = 0;
 int rtype_count = 0;
 int itype_count = 0;
@@ -13,17 +12,14 @@ int jtype_count = 0;
 int memory_count = 0;
 int branch_count = 0;
 
-// For multiplication instructions
 uint64_t high_word = 0;
 uint64_t low_word = 0;
 
-// Register file structure
 typedef struct {
     uint32_t regs[32];
     int program_counter;
-} RegisterFile;
+} Registers;
 
-// Control signals structure
 typedef struct {
     int read_memory;
     int write_result_from_memory;
@@ -34,20 +30,19 @@ typedef struct {
     int skip_memory;
 } ControlSignals;
 
-// Function prototypes
 void initialize_control(ControlSignals* control);
 void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
 void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
 void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
-uint32_t instruction_fetch(RegisterFile* registers, uint8_t* memory);
-void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info);
+uint32_t instruction_fetch(Registers* registers, uint8_t* memory);
+void instruction_decode(Registers* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info);
 uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t operand2);
-void instruction_execute(RegisterFile* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info);
+void instruction_execute(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info);
 void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to_wb);
-void writeback_stage(RegisterFile* registers, ControlSignals* control, uint32_t* mem_to_wb);
+void writeback_stage(Registers* registers, ControlSignals* control, uint32_t* mem_to_wb);
 void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* mem_to_wb);
-void run_processor(RegisterFile* registers, uint8_t* memory);
-void setup_registers(RegisterFile* registers);
+void run_processor(Registers* registers, uint8_t* memory);
+void setup_registers(Registers* registers);
 void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info);
 
 void initialize_control(ControlSignals* control) {
@@ -134,15 +129,13 @@ void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_in
     }
 }
 
-// Setup control signals for memory stage
+
 void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
     // Set skip_memory for certain instruction types
-    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || 
-        decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
+    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
         control->skip_memory = 1;
     }
     
-    // Set memory read/write signals
     if (decoded_instruction[0] == 35) { // lw
         control->read_memory = 1;
         control->write_memory = 0;
@@ -174,8 +167,8 @@ void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_in
     }
 }
 
-// Fetch instruction from memory
-uint32_t instruction_fetch(RegisterFile* registers, uint8_t* memory) {
+//빅엔디안 방식으로 4 바이트 읽어옴
+uint32_t instruction_fetch(Registers* registers, uint8_t* memory) {
     printf("\t[Instruction Fetch] ");
     uint32_t instruction = 0;
     
@@ -210,7 +203,6 @@ void decode_jtype(uint32_t instruction, uint32_t* parts) {
     parts[1] = instruction & 0x3ffffff;    // target address
 }
 
-// Decode R-type instruction for display
 void display_rtype(uint32_t* parts) {
     printf("R, Inst: ");
     
@@ -243,7 +235,6 @@ void display_rtype(uint32_t* parts) {
     }
 }
 
-// Decode I-type instruction for display
 void display_itype(uint32_t* parts) {
     printf("I, Inst: ");
     
@@ -272,7 +263,6 @@ void display_itype(uint32_t* parts) {
     }
 }
 
-// Decode J-type instruction for display
 void display_jtype(uint32_t* parts) {
     printf("J, Inst: ");
     
@@ -306,18 +296,17 @@ void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info) {
     address_info[1] = id_to_ex[7]; // Previously stored PC+4 value
 }
 
-// Decode instruction
-void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info) {
+//명령어 분리
+void instruction_decode(Registers* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info) {
     printf("\t[Instruction Decode] ");
     instruction_count++;
     
     uint32_t instruction_parts[6] = { 0, };
     initialize_control(control);
     
-    // Extract opcode
-    instruction_parts[0] = instruction >> 26; // opcode [31-26]
+    instruction_parts[0] = instruction >> 26; // opcode [31-26] 추출
     
-    // Extract fields based on instruction type
+    //타입 별로 분리해서 비트를 추출
     if (instruction_parts[0] == 2 || instruction_parts[0] == 3) {
         decode_jtype(instruction, instruction_parts);
     } else if (instruction_parts[0] == 0) {
@@ -328,20 +317,20 @@ void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32
 
     printf("Type: ");
     if (instruction_parts[0] == 0) { // R-type
-        id_to_ex[1] = 0;
+        id_to_ex[1] = 0;//rtype
         display_rtype(instruction_parts);
         rtype_count++;
         
-        // Special case for 'jr' instruction
+        //jr 특별 처리
         if (instruction_parts[4] == 0x08) {
-            id_to_ex[1] = 3; // Mark as jr
+            id_to_ex[1] = 3; //jr
         }
     } else if (instruction_parts[0] == 2 || instruction_parts[0] == 3) { // J-type
-        id_to_ex[1] = 1;
+        id_to_ex[1] = 1;//jtype
         display_jtype(instruction_parts);
         jtype_count++;
     } else { // I-type
-        id_to_ex[1] = 2;
+        id_to_ex[1] = 2;//itype
         
         if (instruction_parts[0] == 4 || instruction_parts[0] == 5) { // beq bne
             id_to_ex[1] = 4;
@@ -353,7 +342,6 @@ void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32
     
     printf("\n\t    opcode: 0x%x", instruction_parts[0]);
     
-    // Display additional instruction information based on type
     if (instruction_parts[0] == 0) { // R-type
         if (instruction_parts[4] != 0x08 && instruction_parts[4] != 0x12 && instruction_parts[4] != 0x18) {
             printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d (0x%x)", 
@@ -407,10 +395,8 @@ void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32
         alu_op = 0b10;
     }
     
-    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", 
-           reg_dst, reg_write, alu_src, pc_src, mem_read, mem_write, mem_to_reg, alu_op);
+    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", reg_dst, reg_write, alu_src, pc_src, mem_read, mem_write, mem_to_reg, alu_op);
 
-    // Prepare data for execution stage based on instruction type
     id_to_ex[0] = instruction_parts[0]; // opcode
     id_to_ex[7] = registers->program_counter; // PC+4 for branch/jump
     
@@ -446,7 +432,7 @@ void instruction_decode(RegisterFile* registers, ControlSignals* control, uint32
     extend_immediate_values(id_to_ex, address_info);
 }
 
-// Perform ALU operation
+// alu 연산
 uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t operand2) {
     uint32_t result = 0;
     
@@ -488,8 +474,8 @@ uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t oper
     return result;
 }
 
-// Handle jump instructions
-void process_jumps(RegisterFile* registers, uint32_t* id_to_ex, uint32_t* address_info) {
+//점프
+void process_jumps(Registers* registers, uint32_t* id_to_ex, uint32_t* address_info) {
     if (id_to_ex[1] == 1) { // J-type
         if (id_to_ex[0] == 3) { // jal
             registers->regs[31] = id_to_ex[7];  // ra = PC+4
@@ -503,7 +489,7 @@ void process_jumps(RegisterFile* registers, uint32_t* id_to_ex, uint32_t* addres
 }
 
 // Handle branch instructions
-void process_branches(RegisterFile* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* address_info) {
+void process_branches(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* address_info) {
     uint32_t alu_result;
     address_info[2] = id_to_ex[5]; // Branch offset
     
@@ -528,11 +514,9 @@ void process_branches(RegisterFile* registers, ControlSignals* control, uint32_t
     }
 }
 
-// Execute stage of pipeline
-void instruction_execute(RegisterFile* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info) {
+void instruction_execute(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info) {
     printf("\t[Execute] ");
     
-    // Pass along instruction info to next stage
     ex_to_mem[0] = id_to_ex[0]; // opcode
     ex_to_mem[1] = id_to_ex[1]; // instruction type
     
@@ -558,7 +542,6 @@ void instruction_execute(RegisterFile* registers, ControlSignals* control, uint3
         return;
     }
 
-    // Setup control signals for ALU
     initialize_control(control);
     setup_execution_stage_control(control, id_to_ex);
 
@@ -596,7 +579,6 @@ void instruction_execute(RegisterFile* registers, ControlSignals* control, uint3
     printf("0x%x\n", ex_to_mem[2]);
 }
 
-// Read data from memory
 uint32_t read_from_memory(uint32_t address) {
     uint32_t data = 0;
     for (int j = 3; j >= 0; j--) {
@@ -606,14 +588,12 @@ uint32_t read_from_memory(uint32_t address) {
     return data;
 }
 
-// Write data to memory
 void write_to_memory(uint32_t address, uint32_t data) {
     for (int i = 0; i < 4; i++) {
         memory[address + i] = (data >> (8 * i)) & 0xFF;
     }
 }
 
-// Memory access stage of pipeline
 void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to_wb) {
     printf("\t[Memory Access] ");
     
@@ -659,8 +639,7 @@ void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to
     printf("\n");
 }
 
-// Writeback stage of pipeline
-void writeback_stage(RegisterFile* registers, ControlSignals* control, uint32_t* mem_to_wb) {
+void writeback_stage(Registers* registers, ControlSignals* control, uint32_t* mem_to_wb) {
     printf("\t[Write Back] newPC: 0x%x", registers->program_counter);
     
     // Setup control signals for writeback
@@ -683,7 +662,7 @@ void writeback_stage(RegisterFile* registers, ControlSignals* control, uint32_t*
     printf("\n");
 }
 
-// Clear pipeline registers for next cycle
+//다음 사이클을 위해 파이프라인 레지스터 초기화
 void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* mem_to_wb) {
     *instruction = 0;
     
@@ -709,7 +688,7 @@ void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uin
 }
 
 // Run the processor
-void run_processor(RegisterFile* registers, uint8_t* memory) {
+void run_processor(Registers* registers, uint8_t* memory) {
     uint32_t instruction = 0;
     uint32_t address_info[3];     // Used for PC, jump/branch targets
     uint32_t id_to_ex[8];         // ID/EX pipeline registers
@@ -744,23 +723,18 @@ void run_processor(RegisterFile* registers, uint8_t* memory) {
         clear_pipeline_registers(&instruction, address_info, id_to_ex, ex_to_mem, mem_to_wb);
     }
 
-    // Print statistics
-    printf("12345678> Final Result");
+    printf("Final Result");
     printf("\tCycles: %d, R-type instructions: %d, I-type instructions: %d, J-type instructions: %d\n", 
            instruction_count, rtype_count, itype_count, jtype_count);
     printf("\tReturn value(v0) : %d\n", registers->regs[2]);
 }
 
 // Initialize registers
-void setup_registers(RegisterFile* registers) {
-    // Initialize program counter
+void setup_registers(Registers* registers) {
     registers->program_counter = 0;
-    
-    // Initialize all registers to 0
     for (int i = 0; i < 32; i++) {
         registers->regs[i] = 0;
     }
-    
     registers->regs[31] = 0xffffffff;  // $ra (return address)
     registers->regs[29] = 0x1000000;   // $sp (stack pointer)
 }
@@ -769,17 +743,8 @@ int main(int argc, char* argv[]) {
     // Check if filename is provided as command line argument
     if (argc < 2) {
         printf("Usage: %s <filename.bin>\n", argv[0]);
-        printf("Available test files:\n");
-        printf("  - sum.bin\n");
-        printf("  - func.bin\n");
-        printf("  - fibonacci.bin\n");
-        printf("  - factorial.bin\n");
-        printf("  - power.bin\n");
-        printf("  - fib2.bin\n");
         return 1;
     }
-
-    // Open binary file containing MIPS instructions
     FILE* file = fopen(argv[1], "rb");
 
     if (!file) {
@@ -791,7 +756,6 @@ int main(int argc, char* argv[]) {
     size_t bytes_read;      
     size_t memory_index = 0;   
 
-    // Read 32-bit words from file and store in memory byte by byte
     while ((bytes_read = fread(&buffer, sizeof(uint32_t), 1, file)) > 0 && 
            memory_index < (MEMORY_SIZE - 3)) {
         // Store in memory in big-endian format (most significant byte first)
@@ -803,11 +767,9 @@ int main(int argc, char* argv[]) {
 
     fclose(file);
 
-    // Initialize register file
-    RegisterFile registers;
+    Registers registers;
     setup_registers(&registers);
     
-    // Run the processor
     run_processor(&registers, memory);
 
     return 0;
