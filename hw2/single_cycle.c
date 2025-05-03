@@ -206,6 +206,7 @@ void decode_jtype(uint32_t instruction, uint32_t* parts) {
 void display_rtype(uint32_t* parts) {
     printf("R, Inst: ");
     
+    //funct 코드에 따라 명령어 출력
     if (parts[4] == 0x08) {
         printf("jr r%d", parts[1]);
     } else if (parts[4] == 0x20) {
@@ -238,6 +239,7 @@ void display_rtype(uint32_t* parts) {
 void display_itype(uint32_t* parts) {
     printf("I, Inst: ");
     
+    //opcode에 따라 명령어 출력
     if (parts[0] == 4) {
         printf("beq r%d r%d %x", parts[2], parts[1], parts[3]);
     } else if (parts[0] == 5) {
@@ -335,7 +337,6 @@ void instruction_decode(Registers* registers, ControlSignals* control, uint32_t 
         if (instruction_parts[0] == 4 || instruction_parts[0] == 5) { // beq bne
             id_to_ex[1] = 4;
         }
-        
         display_itype(instruction_parts);
         itype_count++;
     }
@@ -344,11 +345,8 @@ void instruction_decode(Registers* registers, ControlSignals* control, uint32_t 
     
     if (instruction_parts[0] == 0) { // R-type
         if (instruction_parts[4] != 0x08 && instruction_parts[4] != 0x12 && instruction_parts[4] != 0x18) {
-            printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d (0x%x)", 
-                   instruction_parts[1], registers->regs[instruction_parts[1]], 
-                   instruction_parts[2], registers->regs[instruction_parts[2]], 
-                   instruction_parts[3], registers->regs[instruction_parts[3]]);
-                   
+            printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d (0x%x)", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]], instruction_parts[3], registers->regs[instruction_parts[3]]);
+                 
             if (instruction_parts[4] == 0 || instruction_parts[4] == 2) {
                 printf(", shmat: %d", instruction_parts[5]);
             }
@@ -357,23 +355,16 @@ void instruction_decode(Registers* registers, ControlSignals* control, uint32_t 
         } else if (instruction_parts[4] == 0x12) { // mflo
             printf(", rd: %d (0x%x)", instruction_parts[3], registers->regs[instruction_parts[3]]);
         } else if (instruction_parts[4] == 0x18) { // mult
-            printf(", rs: %d (0x%x), rt: %d (0x%x)", 
-                   instruction_parts[1], registers->regs[instruction_parts[1]], 
-                   instruction_parts[2], registers->regs[instruction_parts[2]]);
+            printf(", rs: %d (0x%x), rt: %d (0x%x)", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]]);
         }
-        
         printf(", funct: 0x%x", instruction_parts[4]);
     } else if (instruction_parts[0] == 2 || instruction_parts[0] == 3) { // J-type
         printf(", imm: %d", instruction_parts[1]);
     } else if (instruction_parts[0] == 0xf) {
         printf(", rt: %d (0x%x)", instruction_parts[2], registers->regs[instruction_parts[2]]);
     } else {
-        printf(", rs: %d (0x%x), rt: %d (0x%x), imm: %d", 
-               instruction_parts[1], registers->regs[instruction_parts[1]], 
-               instruction_parts[2], registers->regs[instruction_parts[2]], 
-               instruction_parts[3]);
+        printf(", rs: %d (0x%x), rt: %d (0x%x), imm: %d", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]], instruction_parts[3]);
     }
-    
     printf("\n");
 
     // Calculate control signals for display
