@@ -755,12 +755,10 @@ int main(int argc, char* argv[]) {
         memory[memory_index++] = (buffer >> 8) & 0xFF;   
         memory[memory_index++] = buffer & 0xFF;         
     }
-
     fclose(file);
 
     Registers registers;
     setup_registers(&registers);
-    
     run_processor(&registers, memory);
 
     return 0;
