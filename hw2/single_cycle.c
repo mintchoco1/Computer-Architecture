@@ -55,7 +55,6 @@ void initialize_control(ControlSignals* control) {
     control->skip_memory = 0;
 }
 
-// Setup control signals for execution stage - handles R-type operations
 void setup_rtype_execution(ControlSignals* control, uint32_t function_code) {
     switch (function_code) {
         case 0x20: // add
@@ -94,7 +93,6 @@ void setup_rtype_execution(ControlSignals* control, uint32_t function_code) {
     }
 }
 
-// Setup control signals for execution stage - handles I-type operations
 void setup_itype_execution(ControlSignals* control, uint32_t opcode) {
     switch (opcode) {
         case 4: // beq
@@ -120,7 +118,6 @@ void setup_itype_execution(ControlSignals* control, uint32_t opcode) {
     }
 }
 
-// Setup control signals for execution stage
 void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
     if (decoded_instruction[0] == 0) { // R-type
         setup_rtype_execution(control, decoded_instruction[2]);
@@ -131,7 +128,6 @@ void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_in
 
 
 void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
-    // Set skip_memory for certain instruction types
     if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
         control->skip_memory = 1;
     }
@@ -148,8 +144,7 @@ void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instr
 // Setup control signals for writeback stage
 void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
     // Set register write signal
-    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || 
-        decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
+    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
         control->write_register = 0;
     }
     
@@ -157,7 +152,6 @@ void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_in
         control->write_register = 0;
     }
     
-    // Set memory-to-register signal
     if (decoded_instruction[0] == 0) { // R-type
         control->write_result_from_memory = 0;
     } else { // I-type
@@ -392,10 +386,10 @@ void instruction_decode(Registers* registers, ControlSignals* control, uint32_t 
     id_to_ex[7] = registers->program_counter; // PC+4 for branch/jump
     
     if (id_to_ex[1] == 0) { // R-type
-        id_to_ex[2] = instruction_parts[4]; // function code
+        id_to_ex[2] = instruction_parts[4]; // function 
         id_to_ex[3] = instruction_parts[1]; // rs
         id_to_ex[4] = instruction_parts[2]; // rt
-        id_to_ex[6] = instruction_parts[3]; // rd (write register)
+        id_to_ex[6] = instruction_parts[3]; // rd 
         
         if (id_to_ex[2] == 0x0 || id_to_ex[2] == 0x2) {
             id_to_ex[7] = instruction_parts[5]; // shift amount
@@ -405,10 +399,10 @@ void instruction_decode(Registers* registers, ControlSignals* control, uint32_t 
     } else if (id_to_ex[1] == 2) { // I-type
         id_to_ex[3] = instruction_parts[1]; // rs
         id_to_ex[5] = instruction_parts[3]; // immediate
-        id_to_ex[6] = instruction_parts[2]; // rt (write register)
+        id_to_ex[6] = instruction_parts[2]; // rt
         
         if (id_to_ex[0] == 43) { // sw
-            id_to_ex[4] = instruction_parts[2]; // rt (source register)
+            id_to_ex[4] = instruction_parts[2]; //rt 
         }
     } else if (id_to_ex[1] == 3) { // jr
         id_to_ex[3] = instruction_parts[1]; // rs
