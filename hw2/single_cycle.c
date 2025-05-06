@@ -42,7 +42,7 @@ void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to
 void writeback_stage(Registers* registers, ControlSignals* control, uint32_t* mem_to_wb);
 void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* mem_to_wb);
 void run_processor(Registers* registers, uint8_t* memory);
-void setup_registers(Registers* registers);
+void init_registers(Registers* registers);
 void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info);
 
 void initialize_control(ControlSignals* control) {
@@ -295,7 +295,7 @@ void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info) {
     }
     
     // Store PC+4 value for branch and jump calculations
-    address_info[1] = id_to_ex[7]; // Previously stored PC+4 value
+    address_info[1] = id_to_ex[7]; 
 }
 
 //명령어 분리
@@ -681,22 +681,19 @@ void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uin
 // Run the processor
 void run_processor(Registers* registers, uint8_t* memory) {
     uint32_t instruction = 0;
-    uint32_t address_info[3];     // Used for PC, jump/branch targets
-    uint32_t id_to_ex[8];         // ID/EX pipeline registers
-    uint32_t ex_to_mem[5];        // EX/MEM pipeline registers
-    uint32_t mem_to_wb[5];        // MEM/WB pipeline registers
+    uint32_t address_info[3];     
+    uint32_t id_to_ex[8];         
+    uint32_t ex_to_mem[5];       
+    uint32_t mem_to_wb[5];        
     ControlSignals control;
     
     initialize_control(&control);
 
-    // Run until program termination (jr $ra when $ra = 0xffffffff)
     while (registers->program_counter != 0xffffffff) {
         printf("12345678> Cycle : %d\n", instruction_count);
         
-        // Fetch instruction
         instruction = instruction_fetch(registers, memory);
         
-        // Skip if NOP (instruction = 0)
         if (instruction == 0) {
             printf("\tNOP\n\n");
             continue;
@@ -707,7 +704,7 @@ void run_processor(Registers* registers, uint8_t* memory) {
         instruction_execute(registers, &control, id_to_ex, ex_to_mem, address_info);
         memory_stage(&control, ex_to_mem, mem_to_wb);
         writeback_stage(registers, &control, mem_to_wb);
-        
+
         printf("\n\n");
         
         // Clear pipeline registers for next cycle
@@ -720,8 +717,7 @@ void run_processor(Registers* registers, uint8_t* memory) {
     printf("\tReturn value(v0) : %d\n", registers->regs[2]);
 }
 
-// Initialize registers
-void setup_registers(Registers* registers) {
+void init_registers(Registers* registers) {
     registers->program_counter = 0;
     for (int i = 0; i < 32; i++) {
         registers->regs[i] = 0;
@@ -731,7 +727,6 @@ void setup_registers(Registers* registers) {
 }
 
 int main(int argc, char* argv[]) {
-    // Check if filename is provided as command line argument
     if (argc < 2) {
         printf("Usage: %s <filename.bin>\n", argv[0]);
         return 1;
@@ -758,7 +753,7 @@ int main(int argc, char* argv[]) {
     fclose(file);
 
     Registers registers;
-    setup_registers(&registers);
+    init_registers(&registers);
     run_processor(&registers, memory);
 
     return 0;
