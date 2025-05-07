@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 
 #define MEMORY_SIZE 0x1000000
 
@@ -21,154 +23,153 @@ typedef struct {
 } Registers;
 
 typedef struct {
-    int read_memory;
-    int write_result_from_memory;
-    int write_memory;
-    int write_register;
-    int alu_operation;
-    int skip_execution;
-    int skip_memory;
+    int reg_dst;            // 목적지 레지스터 선택 (1=rd, 0=rt)
+    int reg_write;          // 레지스터 쓰기 활성화
+    int alu_src;            // ALU 두 번째 입력 선택 (1=immediate, 0=register)
+    int mem_to_reg;         // 레지스터에 쓸 데이터 선택 (1=memory, 0=ALU)
+    int mem_read;           // 메모리 읽기 활성화
+    int mem_write;          // 메모리 쓰기 활성화
+    int branch;             // 분기 명령어 표시
+    int jump;               // 점프 명령어 표시
+    int alu_op;             // ALU 연산 코드
 } ControlSignals;
 
-void initialize_control(ControlSignals* control);
-void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
-void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
-void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_instruction);
+// 명령어 정보를 저장하는 구조체
+typedef struct {
+    uint32_t opcode;        // 명령어 opcode
+    uint32_t rs;            // rs 레지스터 번호
+    uint32_t rt;            // rt 레지스터 번호
+    uint32_t rd;            // rd 레지스터 번호
+    uint32_t rs_value;      // rs 레지스터 값
+    uint32_t rt_value;      // rt 레지스터 값
+    uint32_t immediate;     // 즉시값 (I-type)
+    uint32_t shamt;         // shift amount (R-type)
+    uint32_t funct;         // function code (R-type)
+    uint32_t jump_target;   // 점프 목표 주소 (J-type)
+    uint32_t inst_type;     // 명령어 타입 (0:R, 1:J, 2:I, 3:jr, 4:branch, 5:jalr)
+    uint32_t pc_plus_4;     // PC+4 값 (분기 계산용)
+} InstructionInfo;
+
+// 함수 선언
 uint32_t instruction_fetch(Registers* registers, uint8_t* memory);
-void instruction_decode(Registers* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info);
-uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t operand2);
-void instruction_execute(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info);
-void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to_wb);
-void writeback_stage(Registers* registers, ControlSignals* control, uint32_t* mem_to_wb);
-void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* mem_to_wb);
+void instruction_decode(uint32_t instruction, Registers* registers, InstructionInfo* info, ControlSignals* control);
+uint32_t alu_operation(int alu_op, uint32_t operand1, uint32_t operand2);
+uint32_t execute_instruction(InstructionInfo* info, ControlSignals* control, Registers* registers);
+uint32_t memory_access(uint32_t address, uint32_t write_data, ControlSignals* control, InstructionInfo* info);
+void write_back(uint32_t alu_result, uint32_t memory_data, InstructionInfo* info, ControlSignals* control, Registers* registers);
 void run_processor(Registers* registers, uint8_t* memory);
 void init_registers(Registers* registers);
-void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info);
+void print_registers(Registers* registers);
 
+// 컨트롤 시그널 초기화
 void initialize_control(ControlSignals* control) {
-    control->read_memory = 0;
-    control->write_result_from_memory = 0;
-    control->write_memory = 0;
-    control->write_register = 1;
-    control->alu_operation = -1;
-    control->skip_execution = 0;
-    control->skip_memory = 0;
+    control->reg_dst = 0;
+    control->reg_write = 0;
+    control->alu_src = 0;
+    control->mem_to_reg = 0;
+    control->mem_read = 0;
+    control->mem_write = 0;
+    control->branch = 0;
+    control->jump = 0;
+    control->alu_op = 0;
 }
 
-void setup_rtype_execution(ControlSignals* control, uint32_t function_code) {
-    switch (function_code) {
-        case 0x20: // add
-            control->alu_operation = 0b0010;
+// 컨트롤 시그널 설정
+void setup_control_signals(InstructionInfo* info, ControlSignals* control) {
+    // 초기화
+    initialize_control(control);
+    
+    // 명령어 타입에 따라 컨트롤 시그널 설정
+    switch (info->opcode) {
+        case 0: // R-type
+            control->reg_dst = 1;       // rd를 목적지 레지스터로 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->alu_op = 2;        // R-type ALU 연산
+            
+            // jr 명령어 특별 처리
+            if (info->funct == 0x08) {  // jr
+                control->jump = 1;
+                control->reg_write = 0; // 레지스터 쓰기 비활성화
+            }
+            // jalr 명령어 특별 처리
+            else if (info->funct == 0x09) { // jalr
+                control->jump = 1;
+                control->reg_write = 1; // PC+4를 rd에 저장
+            }
             break;
-        case 0x12: // mflo
-            control->skip_execution = 1;
+            
+        case 2: // j
+            control->jump = 1;
+            control->reg_write = 0;     // 레지스터 쓰기 비활성화
             break;
-        case 0x24: // and
-            control->alu_operation = 0b0000;
+            
+        case 3: // jal
+            control->jump = 1;
+            control->reg_write = 0;     // $ra에 쓰기 위해 활성화
             break;
-        case 0x25: // or
-            control->alu_operation = 0b0001;
-            break;
-        case 0x27: // nor
-            control->alu_operation = 0b1100;
-            break;
-        case 0x00: // sll
-            control->alu_operation = 0b1110;
-            break;
-        case 0x02: // srl
-            control->alu_operation = 0b1111;
-            break;
-        case 0x2a: // slt
-            control->alu_operation = 0b0111;
-            break;
-        case 0x2b: // sltu
-            control->alu_operation = 0b0111;
-            break;
-        case 0x23: // subu
-            control->alu_operation = 0b0110;
-            break;
-        case 0x21: // addu
-            control->alu_operation = 0b0010;
-            break;
-    }
-}
-
-void setup_itype_execution(ControlSignals* control, uint32_t opcode) {
-    switch (opcode) {
+            
         case 4: // beq
         case 5: // bne
-            control->alu_operation = 0b0110;
+            control->branch = 1;
+            control->alu_op = 1;        // 뺄셈 연산 (비교용)
+            control->reg_write = 0;     // 레지스터 쓰기 비활성화
             break;
+            
         case 8: // addi
         case 9: // addiu
-        case 35: // lw
-        case 43: // sw
-            control->alu_operation = 0b0010;
+            control->alu_src = 1;       // immediate 값 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
             break;
+            
         case 10: // slti
         case 11: // sltiu
-            control->alu_operation = 0b0111;
+            control->alu_src = 1;       // immediate 값 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->alu_op = 3;        // 비교 연산
             break;
+            
         case 12: // andi
-            control->alu_operation = 0b0000;
+            control->alu_src = 1;       // immediate 값 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->alu_op = 4;        // AND 연산
             break;
+            
         case 13: // ori
-            control->alu_operation = 0b0001;
+            control->alu_src = 1;       // immediate 값 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->alu_op = 5;        // OR 연산
+            break;
+            
+        case 15: // lui
+            control->alu_src = 1;       // immediate 값 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->alu_op = 6;        // LUI 연산
+            break;
+            
+        case 35: // lw
+            control->alu_src = 1;       // immediate 값 사용
+            control->mem_to_reg = 1;    // 메모리 데이터 사용
+            control->reg_write = 1;     // 레지스터 쓰기 활성화
+            control->mem_read = 1;      // 메모리 읽기 활성화
+            break;
+            
+        case 43: // sw
+            control->alu_src = 1;       // immediate 값 사용
+            control->mem_write = 1;     // 메모리 쓰기 활성화
+            control->reg_write = 0;     // 레지스터 쓰기 비활성화
             break;
     }
 }
 
-void setup_execution_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
-    if (decoded_instruction[0] == 0) { // R-type
-        setup_rtype_execution(control, decoded_instruction[2]);
-    } else { // I-type or J-type
-        setup_itype_execution(control, decoded_instruction[0]);
-    }
-}
-
-
-void setup_memory_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
-    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
-        control->skip_memory = 1;
-    }
-    
-    if (decoded_instruction[0] == 35) { // lw
-        control->read_memory = 1;
-        control->write_memory = 0;
-    } else if (decoded_instruction[0] == 43) { // sw
-        control->read_memory = 0;
-        control->write_memory = 1;
-    }
-}
-
-// Setup control signals for writeback stage
-void setup_writeback_stage_control(ControlSignals* control, uint32_t* decoded_instruction) {
-    // Set register write signal
-    if (decoded_instruction[1] == 1 || decoded_instruction[1] == 3 || decoded_instruction[1] == 4 || decoded_instruction[1] == 5) {
-        control->write_register = 0;
-    }
-    
-    if (decoded_instruction[0] == 43) { // sw
-        control->write_register = 0;
-    }
-    
-    if (decoded_instruction[0] == 0) { // R-type
-        control->write_result_from_memory = 0;
-    } else { // I-type
-        if (decoded_instruction[0] == 35) { // lw
-            control->write_result_from_memory = 1;
-        }
-    }
-}
-
-//빅엔디안 방식으로 4 바이트 읽어옴
+// 명령어 인출 단계
 uint32_t instruction_fetch(Registers* registers, uint8_t* memory) {
-    printf("\t[Instruction Fetch] ");
+    printf("\t[Fetch] ");
     uint32_t instruction = 0;
+    int pc = registers->program_counter;
     
     for (int i = 0; i < 4; i++) {
         instruction = instruction << 8;
-        instruction |= memory[registers->program_counter + (3 - i)];
+        instruction |= memory[pc + (3 - i)];
     }
     
     registers->program_counter += 4;
@@ -176,265 +177,247 @@ uint32_t instruction_fetch(Registers* registers, uint8_t* memory) {
     return instruction;
 }
 
-// Extract fields from R-type instruction
-void decode_rtype(uint32_t instruction, uint32_t* parts) {
-    parts[1] = (instruction >> 21) & 0x1f; // rs
-    parts[2] = (instruction >> 16) & 0x1f; // rt
-    parts[3] = (instruction >> 11) & 0x1f; // rd
-    parts[4] = instruction & 0x3f;         // funct
-    parts[5] = (instruction >> 6) & 0x1f;  // shamt
+// R-타입 명령어 필드 추출
+void decode_rtype(uint32_t instruction, InstructionInfo* info) {
+    info->rs = (instruction >> 21) & 0x1f;     // rs [25-21]
+    info->rt = (instruction >> 16) & 0x1f;     // rt [20-16]
+    info->rd = (instruction >> 11) & 0x1f;     // rd [15-11]
+    info->shamt = (instruction >> 6) & 0x1f;   // shamt [10-6]
+    info->funct = instruction & 0x3f;          // funct [5-0]
+    info->inst_type = 0;                       // R-type
+    
+    // jr 특별 처리
+    if (info->funct == 0x08) {
+        info->inst_type = 3;                   // jr
+    }
+    // jalr 특별 처리 추가
+    else if (info->funct == 0x09) {
+        info->inst_type = 5;                   // jalr
+    }
 }
 
-// Extract fields from I-type instruction
-void decode_itype(uint32_t instruction, uint32_t* parts) {
-    parts[1] = (instruction >> 21) & 0x1f; // rs
-    parts[2] = (instruction >> 16) & 0x1f; // rt
-    parts[3] = instruction & 0xffff;       // immediate
+// I-타입 명령어 필드 추출
+void decode_itype(uint32_t instruction, InstructionInfo* info) {
+    info->rs = (instruction >> 21) & 0x1f;     // rs [25-21]
+    info->rt = (instruction >> 16) & 0x1f;     // rt [20-16]
+    info->immediate = instruction & 0xffff;    // immediate [15-0]
+    info->inst_type = 2;                       // I-type
+    
+    // beq, bne 특별 처리
+    if (info->opcode == 4 || info->opcode == 5) {
+        info->inst_type = 4;                   // branch
+    }
 }
 
-// Extract fields from J-type instruction
-void decode_jtype(uint32_t instruction, uint32_t* parts) {
-    parts[1] = instruction & 0x3ffffff;    // target address
+// J-타입 명령어 필드 추출
+void decode_jtype(uint32_t instruction, InstructionInfo* info) {
+    info->jump_target = instruction & 0x3ffffff; // target [25-0]
+    info->inst_type = 1;                         // J-type
 }
 
-void display_rtype(uint32_t* parts) {
+// 명령어 디코드 출력 함수들
+void display_rtype(InstructionInfo* info) {
     printf("R, Inst: ");
     
-    //funct 코드에 따라 명령어 출력
-    if (parts[4] == 0x08) {
-        printf("jr r%d", parts[1]);
-    } else if (parts[4] == 0x20) {
-        printf("add r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x22) {
-        printf("sub r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x24) {
-        printf("and r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x25) {
-        printf("or r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x27) {
-        printf("nor r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x00) {
-        printf("sll r%d r%d %d", parts[3], parts[2], parts[5]);
-    } else if (parts[4] == 0x02) {
-        printf("srl r%d r%d r%d", parts[3], parts[2], parts[5]);
-    } else if (parts[4] == 0x2a) {
-        printf("slt r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x2b) {
-        printf("sltu r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x23) {
-        printf("subu r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x21) {
-        printf("addu r%d r%d r%d", parts[3], parts[2], parts[1]);
-    } else if (parts[4] == 0x18) {
-        printf("mult r%d r%d", parts[2], parts[1]);
+    // funct 코드에 따라 명령어 출력
+    switch (info->funct) {
+        case 0x08: printf("jr r%d", info->rs); break;
+        case 0x09: printf("jalr r%d r%d", info->rd, info->rs); break;
+        case 0x20: printf("add r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x22: printf("sub r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x24: printf("and r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x25: printf("or r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x27: printf("nor r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x00: printf("sll r%d r%d %d", info->rd, info->rt, info->shamt); break;
+        case 0x02: printf("srl r%d r%d %d", info->rd, info->rt, info->shamt); break;
+        case 0x2a: printf("slt r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x2b: printf("sltu r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x23: printf("subu r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x21: printf("addu r%d r%d r%d", info->rd, info->rs, info->rt); break;
+        case 0x18: printf("mult r%d r%d", info->rs, info->rt); break;
+        case 0x12: printf("mflo r%d", info->rd); break;
+        default: printf("unknown R-type (funct: 0x%x)", info->funct); break;
     }
 }
 
-void display_itype(uint32_t* parts) {
+void display_itype(InstructionInfo* info) {
     printf("I, Inst: ");
     
-    //opcode에 따라 명령어 출력
-    if (parts[0] == 4) {
-        printf("beq r%d r%d %x", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 5) {
-        printf("bne r%d r%d %x", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 8) {
-        printf("addi r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 9) {
-        printf("addiu r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 10) {
-        printf("slti r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 11) {
-        printf("sltiu r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 12) {
-        printf("andi r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 13) {
-        printf("ori r%d r%d %d", parts[2], parts[1], parts[3]);
-    } else if (parts[0] == 35) {
-        printf("lw r%d %d(r%d)", parts[2], parts[3], parts[1]);
-    } else if (parts[0] == 43) {
-        printf("sw r%d %d(r%d)", parts[2], parts[3], parts[1]);
-    } else if (parts[0] == 0xf) {
-        printf("lui r%d %d", parts[2], parts[3]);
+    // opcode에 따라 명령어 출력
+    switch (info->opcode) {
+        case 4: printf("beq r%d r%d %x", info->rs, info->rt, info->immediate); break;
+        case 5: printf("bne r%d r%d %x", info->rs, info->rt, info->immediate); break;
+        case 8: printf("addi r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 9: printf("addiu r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 10: printf("slti r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 11: printf("sltiu r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 12: printf("andi r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 13: printf("ori r%d r%d %d", info->rt, info->rs, info->immediate); break;
+        case 35: printf("lw r%d %d(r%d)", info->rt, info->immediate, info->rs); break;
+        case 43: printf("sw r%d %d(r%d)", info->rt, info->immediate, info->rs); break;
+        case 15: printf("lui r%d %d", info->rt, info->immediate); break;
+        default: printf("unknown I-type (opcode: 0x%x)", info->opcode); break;
     }
 }
 
-void display_jtype(uint32_t* parts) {
+void display_jtype(InstructionInfo* info) {
     printf("J, Inst: ");
     
-    if (parts[0] == 2) {
-        printf("j 0x%x", parts[1]);
-    } else if (parts[0] == 3) {
-        printf("jal 0x%x", parts[1]);
+    if (info->opcode == 2) {
+        printf("j 0x%x", info->jump_target);
+    } else if (info->opcode == 3) {
+        printf("jal 0x%x", info->jump_target);
+    } else {
+        printf("unknown J-type (opcode: 0x%x)", info->opcode);
     }
 }
 
-// Handle sign extension for immediate values
-void extend_immediate_values(uint32_t* id_to_ex, uint32_t* address_info) {
-    if (id_to_ex[1] == 2) { // I-type immediate
-        if (id_to_ex[0] == 0xc || id_to_ex[0] == 0xd || (id_to_ex[5] >> 15) == 0) {
-            // Zero extend for logical operations (andi, ori)
-            id_to_ex[5] = (id_to_ex[5] & 0x0000ffff);
-        } else if ((id_to_ex[5] >> 15) == 1) { // Sign extend for others
-            id_to_ex[5] = (id_to_ex[5] | 0xffff0000);
+// immediate 값 확장 처리
+void extend_immediate_values(InstructionInfo* info) {
+    if (info->inst_type == 2) { // I-type
+        // 논리 연산(andi, ori)의 경우 제로 확장
+        if (info->opcode == 12 || info->opcode == 13) {
+            info->immediate &= 0x0000ffff;
+        } 
+        // 그 외 부호 확장 (MSB가 1인 경우)
+        else if ((info->immediate >> 15) == 1) {
+            info->immediate |= 0xffff0000;
         }
-    } else if (id_to_ex[1] == 1) { // J-type address
-        address_info[0] <<= 2; // Word alignment
-    } else if (id_to_ex[1] == 4) { // Branch address
-        if ((id_to_ex[5] >> 15) == 1) {
-            id_to_ex[5] = ((id_to_ex[5] << 2) | 0xfffc0000); // Sign extended
-        } else if ((id_to_ex[5] >> 15) == 0) {
-            id_to_ex[5] = ((id_to_ex[5] << 2) & 0x3ffc); // Zero extended
+    } else if (info->inst_type == 4) { // branch
+        // 원래 immediate 값 저장
+        uint32_t orig_imm = info->immediate;
+        
+        // 분기 주소 계산 (offset*4)
+        info->immediate <<= 2; // 4배 (워드 정렬)
+        
+        // 부호 확장 (MSB가 1인 경우)
+        if ((orig_imm >> 15) == 1) {
+            info->immediate |= 0xfffc0000;
         }
+    } else if (info->inst_type == 1) { // J-type
+        // 점프 주소 계산 (target<<2)
+        info->jump_target <<= 2;
     }
-    
-    // Store PC+4 value for branch and jump calculations
-    address_info[1] = id_to_ex[7]; 
 }
 
-//명령어 분리
-void instruction_decode(Registers* registers, ControlSignals* control, uint32_t instruction, uint32_t* id_to_ex, uint32_t* address_info) {
-    printf("\t[Instruction Decode] ");
+// 명령어 디코드 단계
+void instruction_decode(uint32_t instruction, Registers* registers, InstructionInfo* info, ControlSignals* control) {
+    printf("\t[Decode] ");
     instruction_count++;
     
-    uint32_t instruction_parts[6] = { 0, };
-    initialize_control(control);
+    // 초기화
+    memset(info, 0, sizeof(InstructionInfo));
     
-    instruction_parts[0] = instruction >> 26; // opcode [31-26] 추출
+    // 현재 PC-4 저장 (분기 계산용)
+    info->pc_plus_4 = registers->program_counter - 4;
     
-    //타입 별로 분리해서 비트를 추출
-    if (instruction_parts[0] == 2 || instruction_parts[0] == 3) {
-        decode_jtype(instruction, instruction_parts);
-    } else if (instruction_parts[0] == 0) {
-        decode_rtype(instruction, instruction_parts);
-    } else {
-        decode_itype(instruction, instruction_parts);
-    }
-
-    printf("Type: ");
-    if (instruction_parts[0] == 0) { // R-type
-        id_to_ex[1] = 0;//rtype
-        display_rtype(instruction_parts);
+    // opcode 추출 [31-26]
+    info->opcode = instruction >> 26;
+    
+    // 명령어 타입에 따라 필드 추출
+    if (info->opcode == 0) { // R-type
+        decode_rtype(instruction, info);
         rtype_count++;
-        
-        //jr 특별 처리
-        if (instruction_parts[4] == 0x08) {
-            id_to_ex[1] = 3; //jr
-        }
-    } else if (instruction_parts[0] == 2 || instruction_parts[0] == 3) { // J-type
-        id_to_ex[1] = 1;//jtype
-        display_jtype(instruction_parts);
+    } else if (info->opcode == 2 || info->opcode == 3) { // J-type
+        decode_jtype(instruction, info);
         jtype_count++;
     } else { // I-type
-        id_to_ex[1] = 2;//itype
-        
-        if (instruction_parts[0] == 4 || instruction_parts[0] == 5) { // beq bne
-            id_to_ex[1] = 4;
-        }
-        display_itype(instruction_parts);
+        decode_itype(instruction, info);
         itype_count++;
     }
     
-    printf("\n\t    opcode: 0x%x", instruction_parts[0]);
+    // 레지스터 값 가져오기
+    info->rs_value = registers->regs[info->rs];
+    info->rt_value = registers->regs[info->rt];
     
-    if (instruction_parts[0] == 0) { // R-type
-        if (instruction_parts[4] != 0x08 && instruction_parts[4] != 0x12 && instruction_parts[4] != 0x18) {
-            printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d (0x%x)", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]], instruction_parts[3], registers->regs[instruction_parts[3]]);
-                 
-            if (instruction_parts[4] == 0 || instruction_parts[4] == 2) {
-                printf(", shmat: %d", instruction_parts[5]);
+    // 컨트롤 시그널 설정
+    setup_control_signals(info, control);
+    
+    // 명령어 타입에 따라 출력
+    printf("Type: ");
+    if (info->inst_type == 0 || info->inst_type == 3 || info->inst_type == 5) { // R-type/jr/jalr
+        display_rtype(info);
+    } else if (info->inst_type == 1) { // J-type
+        display_jtype(info);
+    } else { // I-type or branch
+        display_itype(info);
+    }
+    
+    printf("\n\t    opcode: 0x%x", info->opcode);
+    
+    // 명령어 타입에 따라 추가 정보 출력
+    if (info->inst_type == 0 || info->inst_type == 5) { // R-type 또는 jalr
+        if (info->funct != 0x08 && info->funct != 0x12 && info->funct != 0x18) {
+            printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d", 
+                   info->rs, info->rs_value, info->rt, info->rt_value, info->rd);
+                   
+            if (info->funct == 0 || info->funct == 2) {
+                printf(", shmat: %d", info->shamt);
             }
-        } else if (instruction_parts[4] == 0x08) { // jr
-            printf(", rs: %d (0x%x)", instruction_parts[1], registers->regs[instruction_parts[1]]);
-        } else if (instruction_parts[4] == 0x12) { // mflo
-            printf(", rd: %d (0x%x)", instruction_parts[3], registers->regs[instruction_parts[3]]);
-        } else if (instruction_parts[4] == 0x18) { // mult
-            printf(", rs: %d (0x%x), rt: %d (0x%x)", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]]);
+        } else if (info->funct == 0x08) { // jr
+            printf(", rs: %d (0x%x)", info->rs, info->rs_value);
+        } else if (info->funct == 0x09) { // jalr
+            printf(", rs: %d (0x%x), rd: %d", info->rs, info->rs_value, info->rd);
+        } else if (info->funct == 0x12) { // mflo
+            printf(", rd: %d", info->rd);
+        } else if (info->funct == 0x18) { // mult
+            printf(", rs: %d (0x%x), rt: %d (0x%x)", 
+                   info->rs, info->rs_value, info->rt, info->rt_value);
         }
-        printf(", funct: 0x%x", instruction_parts[4]);
-    } else if (instruction_parts[0] == 2 || instruction_parts[0] == 3) { // J-type
-        printf(", imm: %d", instruction_parts[1]);
-    } else if (instruction_parts[0] == 0xf) {
-        printf(", rt: %d (0x%x)", instruction_parts[2], registers->regs[instruction_parts[2]]);
-    } else {
-        printf(", rs: %d (0x%x), rt: %d (0x%x), imm: %d", instruction_parts[1], registers->regs[instruction_parts[1]], instruction_parts[2], registers->regs[instruction_parts[2]], instruction_parts[3]);
+        printf(", funct: 0x%x", info->funct);
+    } else if (info->inst_type == 1) { // J-type
+        printf(", imm: %d", info->jump_target);
+    } else if (info->opcode == 15) { // lui
+        printf(", rt: %d", info->rt);
+    } else { // I-type
+        printf(", rs: %d (0x%x), rt: %d (0x%x), imm: %d", 
+               info->rs, info->rs_value, info->rt, info->rt_value, info->immediate);
     }
     printf("\n");
-
-    // Calculate control signals for display
-    int reg_dst, reg_write, alu_src, pc_src, mem_read, mem_write, mem_to_reg, alu_op;
-    reg_dst = (instruction_parts[0] == 0) ? 1 : 0;
-    reg_write = ((instruction_parts[0] == 0) || (instruction_parts[0] == 35)) ? 1 : 0;
-    alu_src = ((instruction_parts[0] == 43) || (instruction_parts[0] == 35)) ? 1 : 0;
-    pc_src = ((instruction_parts[0] >= 2) && (instruction_parts[0] <= 5)) ? 1 : 0;
-    mem_read = (instruction_parts[0] == 35) ? 1 : 0;
-    mem_write = (instruction_parts[0] == 43) ? 1 : 0;
-    mem_to_reg = ((instruction_parts[0] == 0xf) || (instruction_parts[0] == 35)) ? 1 : 0;
     
-    alu_op = 0;
-    if ((instruction_parts[0] == 43) || (instruction_parts[0] == 35)) { // lw sw
-        alu_op = 0;
-    } else if ((instruction_parts[0] == 4) || (instruction_parts[0] == 5)) { // branch
-        alu_op = 0b01;
-    } else if (instruction_parts[0] == 0) { // rtype
-        alu_op = 0b10;
-    }
+    // 컨트롤 시그널 출력
+    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", 
+           control->reg_dst, control->reg_write, control->alu_src, 
+           (control->branch || control->jump), control->mem_read, 
+           control->mem_write, control->mem_to_reg, control->alu_op);
     
-    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", reg_dst, reg_write, alu_src, pc_src, mem_read, mem_write, mem_to_reg, alu_op);
-
-    id_to_ex[0] = instruction_parts[0]; // opcode
-    id_to_ex[7] = registers->program_counter; // PC+4 for branch/jump
-    
-    if (id_to_ex[1] == 0) { // R-type
-        id_to_ex[2] = instruction_parts[4]; // function 
-        id_to_ex[3] = instruction_parts[1]; // rs
-        id_to_ex[4] = instruction_parts[2]; // rt
-        id_to_ex[6] = instruction_parts[3]; // rd 
-        
-        if (id_to_ex[2] == 0x0 || id_to_ex[2] == 0x2) {
-            id_to_ex[7] = instruction_parts[5]; // shift amount
-        }
-    } else if (id_to_ex[1] == 1) { // J-type
-        address_info[0] = instruction_parts[1]; // jump address
-    } else if (id_to_ex[1] == 2) { // I-type
-        id_to_ex[3] = instruction_parts[1]; // rs
-        id_to_ex[5] = instruction_parts[3]; // immediate
-        id_to_ex[6] = instruction_parts[2]; // rt
-        
-        if (id_to_ex[0] == 43) { // sw
-            id_to_ex[4] = instruction_parts[2]; //rt 
-        }
-    } else if (id_to_ex[1] == 3) { // jr
-        id_to_ex[3] = instruction_parts[1]; // rs
-    } else { // branch
-        id_to_ex[3] = instruction_parts[1]; // rs
-        id_to_ex[4] = instruction_parts[2]; // rt
-        id_to_ex[5] = instruction_parts[3]; // immediate
-        branch_count++;
-    }
-
-    // Sign extension for immediates
-    extend_immediate_values(id_to_ex, address_info);
+    // immediate 값 확장
+    extend_immediate_values(info);
 }
 
-// alu 연산
-uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t operand2) {
+// ALU 연산 함수
+uint32_t alu_operation(int alu_op, uint32_t operand1, uint32_t operand2) {
     uint32_t result = 0;
     
-    switch (control->alu_operation) {
-        case 0b0000: // AND
-            result = operand1 & operand2;
-            break;
-        case 0b0001: // OR
-            result = operand1 | operand2;
-            break;
-        case 0b0010: // ADD
+    switch (alu_op) {
+        case 0: // 더하기 (ADD)
             result = operand1 + operand2;
             break;
-        case 0b0110: // SUB
+        case 1: // 빼기 (SUB)
             result = operand1 - operand2;
             break;
-        case 0b1001: // MULT
+        case 2: // AND
+            result = operand1 & operand2;
+            break;
+        case 3: // OR
+            result = operand1 | operand2;
+            break;
+        case 4: // XOR
+            result = operand1 ^ operand2;
+            break;
+        case 5: // NOR
+            result = ~(operand1 | operand2);
+            break;
+        case 6: // SLT (Set Less Than)
+            result = ((int32_t)operand1 < (int32_t)operand2) ? 1 : 0;
+            break;
+        case 7: // SLL (Shift Left Logical)
+            result = operand1 << operand2;
+            break;
+        case 8: // SRL (Shift Right Logical)
+            result = operand1 >> operand2;
+            break;
+        case 9: // MULT
             {
                 uint64_t temp = (uint64_t)operand1 * (uint64_t)operand2;
                 high_word = (temp >> 32) & 0xffffffff;
@@ -442,128 +425,177 @@ uint32_t alu_operation(ControlSignals* control, uint32_t operand1, uint32_t oper
                 result = 0;
             }
             break;
-        case 0b1100: // NOR
-            result = ~(operand1 | operand2);
-            break;
-        case 0b0111: // SLT/SLTU
-            result = (operand2 > operand1) ? 1 : 0;
-            break;
-        case 0b1110: // SLL
-            result = operand1 << operand2;
-            break;
-        case 0b1111: // SRL
-            result = operand1 >> operand2;
-            break;
     }
     
     return result;
 }
 
-//점프
-void process_jumps(Registers* registers, uint32_t* id_to_ex, uint32_t* address_info) {
-    if (id_to_ex[1] == 1) { // J-type
-        if (id_to_ex[0] == 3) { // jal
-            registers->regs[31] = id_to_ex[7];  // ra = PC+4
-            registers->program_counter = address_info[0]; // PC = jump target
-        } else if (id_to_ex[0] == 2) { // j
-            registers->program_counter = address_info[0]; // PC = jump target
-        }
-    } else if (id_to_ex[1] == 3) { // jr
-        registers->program_counter = registers->regs[id_to_ex[3]]; // PC = rs
-    }
-}
-
-// Handle branch instructions
-void process_branches(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* address_info) {
-    uint32_t alu_result;
-    address_info[2] = id_to_ex[5]; // Branch offset
+// ALU 연산 선택 함수
+uint32_t select_alu_operation(InstructionInfo* info, ControlSignals* control, uint32_t operand1, uint32_t operand2) {
+    int alu_function = 0;
     
-    if (id_to_ex[0] == 4) { // beq
-        alu_result = alu_operation(control, registers->regs[id_to_ex[3]], registers->regs[id_to_ex[4]]);
-        if (alu_result == 0) { // Equal
-            registers->program_counter = address_info[1] + address_info[2]; // PC = PC+4 + offset
-            printf("%d\n", (alu_result == 0));
-        } else {
-            registers->program_counter = address_info[1]; // PC = PC+4 (no branch)
-            printf("%d\n", (alu_result == 0));
+    // ALU 연산 선택
+    if (info->inst_type == 0 || info->inst_type == 5) { // R-type 또는 jalr
+        switch (info->funct) {
+            case 0x20: // add
+            case 0x21: // addu
+                alu_function = 0; // 더하기
+                break;
+            case 0x22: // sub
+            case 0x23: // subu
+                alu_function = 1; // 빼기
+                break;
+            case 0x24: // and
+                alu_function = 2; // AND
+                break;
+            case 0x25: // or
+                alu_function = 3; // OR
+                break;
+            case 0x26: // xor
+                alu_function = 4; // XOR
+                break;
+            case 0x27: // nor
+                alu_function = 5; // NOR
+                break;
+            case 0x2a: // slt
+            case 0x2b: // sltu
+                alu_function = 6; // SLT
+                break;
+            case 0x00: // sll
+                alu_function = 7; // SLL
+                break;
+            case 0x02: // srl
+                alu_function = 8; // SRL
+                break;
+            case 0x18: // mult
+                alu_function = 9; // MULT
+                break;
+            case 0x09: // jalr
+                return 0; // 특별 처리됨
         }
-    } else if (id_to_ex[0] == 5) { // bne
-        alu_result = alu_operation(control, registers->regs[id_to_ex[3]], registers->regs[id_to_ex[4]]);
-        if (alu_result != 0) { // Not equal
-            registers->program_counter = address_info[1] + address_info[2]; // PC = PC+4 + offset
-            printf("%d\n", (alu_result != 0));
-        } else {
-            registers->program_counter = address_info[1]; // PC = PC+4 (no branch)
-            printf("%d\n", (alu_result != 0));
+    } else { // I-type 또는 기타
+        switch (info->opcode) {
+            case 4: // beq
+            case 5: // bne
+                alu_function = 1; // 빼기 (비교용)
+                break;
+            case 8: // addi
+            case 9: // addiu
+            case 35: // lw
+            case 43: // sw
+                alu_function = 0; // 더하기
+                break;
+            case 10: // slti
+            case 11: // sltiu
+                alu_function = 6; // SLT
+                break;
+            case 12: // andi
+                alu_function = 2; // AND
+                break;
+            case 13: // ori
+                alu_function = 3; // OR
+                break;
+            case 15: // lui
+                return (operand2 << 16); // 특별 처리
         }
     }
+    
+    return alu_operation(alu_function, operand1, operand2);
 }
 
-void instruction_execute(Registers* registers, ControlSignals* control, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* address_info) {
+// 명령어 실행 단계
+uint32_t execute_instruction(InstructionInfo* info, ControlSignals* control, Registers* registers) {
     printf("\t[Execute] ");
     
-    ex_to_mem[0] = id_to_ex[0]; // opcode
-    ex_to_mem[1] = id_to_ex[1]; // instruction type
+    uint32_t alu_result = 0;
     
-    // Handle jumps first, as they update PC directly
-    if (id_to_ex[1] == 1 || id_to_ex[1] == 3) { // Jump instructions
-        process_jumps(registers, id_to_ex, address_info);
-        printf("Pass\n");
-        return;
+    // 점프 명령어 처리
+    if (control->jump) {
+        if (info->inst_type == 1) { // J-type
+            if (info->opcode == 3) { // jal
+                registers->regs[31] = registers->program_counter; // ra = PC+4
+            }
+            // 점프 주소 계산 (PC[31:28] | target<<2)
+            registers->program_counter = ((info->pc_plus_4 & 0xf0000000) | info->jump_target);
+            printf("Jump to 0x%x\n", registers->program_counter);
+        } else if (info->inst_type == 3) { // jr
+            registers->program_counter = info->rs_value; // PC = rs
+            printf("Jump (jr) to 0x%x\n", registers->program_counter);
+        } else if (info->inst_type == 5) { // jalr
+            uint32_t target_addr = info->rs_value;
+            if (info->rd != 0) {
+                registers->regs[info->rd] = registers->program_counter;
+            }
+            registers->program_counter = target_addr;
+            printf("Jump (jalr) to 0x%x, return addr: 0x%x\n", target_addr, registers->program_counter);
+        }
+        return 0;
     }
-
-    // Special case for lui
-    if (id_to_ex[0] == 0xf) { // lui
-        registers->regs[id_to_ex[6]] = (id_to_ex[5] << 16) & 0xffff0000;
-        printf("Pass\n");
-        return;
-    }
-
-    // Special case for mflo
-    if (id_to_ex[1] == 0 && id_to_ex[2] == 0x12) { // mflo
-        registers->regs[id_to_ex[6]] = low_word;
-        ex_to_mem[1] = 5; // Mark as special case
-        printf("Pass\n");
-        return;
-    }
-
-    initialize_control(control);
-    setup_execution_stage_control(control, id_to_ex);
-
-    // Skip execution if needed
-    if (control->skip_execution == 1) {
-        ex_to_mem[4] = id_to_ex[6]; // Pass register destination
-        return;
-    }
-
-    // Handle branch instructions
-    if (id_to_ex[1] == 4) { // beq/bne
-        process_branches(registers, control, id_to_ex, address_info);
-        return;
-    }
-
-    printf("ALU = ");
     
-    // Execute based on instruction type
-    if (id_to_ex[1] == 0) { // R-type
-        if (id_to_ex[2] == 0x00 || id_to_ex[2] == 0x02) { // sll, srl
-            ex_to_mem[2] = alu_operation(control, registers->regs[id_to_ex[4]], id_to_ex[7]);
+    // lui 명령어 특별 처리
+    if (info->opcode == 15) { // lui
+        alu_result = info->immediate << 16;
+        printf("LUI = 0x%x\n", alu_result);
+        return alu_result;
+    }
+    
+    // mflo 명령어 특별 처리
+    if (info->inst_type == 0 && info->funct == 0x12) { // mflo
+        alu_result = low_word;
+        printf("MFLO = 0x%x\n", alu_result);
+        return alu_result;
+    }
+    
+    // 피연산자 선택
+    uint32_t operand1, operand2;
+    
+    // 시프트 명령어 특별 처리
+    if (info->inst_type == 0 && (info->funct == 0x00 || info->funct == 0x02)) { // sll, srl
+        operand1 = info->rt_value;
+        operand2 = info->shamt;
+    } else {
+        operand1 = info->rs_value;
+        
+        // ALUSrc 컨트롤 시그널에 따라 두 번째 피연산자 선택
+        if (control->alu_src) {
+            operand2 = info->immediate; // immediate 값 사용
         } else {
-            ex_to_mem[2] = alu_operation(control, registers->regs[id_to_ex[3]], registers->regs[id_to_ex[4]]);
-        }
-        ex_to_mem[4] = id_to_ex[6]; // Destination register
-        ex_to_mem[3] = id_to_ex[4]; // Source register (for store)
-    } else if (id_to_ex[1] == 2) { // I-type
-        ex_to_mem[2] = alu_operation(control, registers->regs[id_to_ex[3]], id_to_ex[5]);
-        ex_to_mem[4] = id_to_ex[6]; // Destination register
-        if (id_to_ex[0] == 43) { // sw
-            ex_to_mem[3] = registers->regs[id_to_ex[4]]; // Store value
+            operand2 = info->rt_value;  // 레지스터 값 사용
         }
     }
     
-    printf("0x%x\n", ex_to_mem[2]);
+    // ALU 연산 수행
+    alu_result = select_alu_operation(info, control, operand1, operand2);
+    
+    // 분기 명령어 처리
+    if (control->branch) {
+        bool branch_taken = false;
+        
+        if (info->opcode == 4) { // beq
+            branch_taken = (alu_result == 0); // 같으면 분기
+        } else if (info->opcode == 5) { // bne
+            branch_taken = (alu_result != 0); // 다르면 분기
+        }
+        
+        if (branch_taken) {
+            // 분기 주소 계산 (PC + offset)
+            // 여기가 핵심! PC+4 에서 offset 더함
+            registers->program_counter = registers->program_counter + info->immediate;
+            printf("Branch Taken: PC = 0x%x, condition = %d\n", 
+                   registers->program_counter, branch_taken);
+        } else {
+            printf("Branch Not Taken: PC = 0x%x, condition = %d\n", 
+                   registers->program_counter, branch_taken);
+        }
+        branch_count++;
+    } else {
+        printf("ALU = 0x%x\n", alu_result);
+    }
+    
+    return alu_result;
 }
 
+// 메모리에서 읽기
 uint32_t read_from_memory(uint32_t address) {
     uint32_t data = 0;
     for (int j = 3; j >= 0; j--) {
@@ -573,142 +605,130 @@ uint32_t read_from_memory(uint32_t address) {
     return data;
 }
 
+// 메모리에 쓰기
 void write_to_memory(uint32_t address, uint32_t data) {
     for (int i = 0; i < 4; i++) {
         memory[address + i] = (data >> (8 * i)) & 0xFF;
     }
 }
 
-void memory_stage(ControlSignals* control, uint32_t* ex_to_mem, uint32_t* mem_to_wb) {
+// 메모리 접근 단계
+uint32_t memory_access(uint32_t address, uint32_t write_data, ControlSignals* control, InstructionInfo* info) {
     printf("\t[Memory Access] ");
     
-    // Pass instruction info to writeback stage
-    mem_to_wb[0] = ex_to_mem[0]; // opcode
-    mem_to_wb[1] = ex_to_mem[1]; // instruction type
+    uint32_t memory_data = 0;
     
-    // Setup control signals for memory access
-    initialize_control(control);
-    setup_memory_stage_control(control, ex_to_mem);
-
-    // Skip memory access if needed (for branches, jumps, etc.)
-    if (control->skip_memory) {
-        if (ex_to_mem[1] == 0) { // R-type
-            mem_to_wb[4] = ex_to_mem[4]; // Register destination
-        }
+    // 점프나 분기 명령어인 경우 메모리 접근 생략
+    if (control->jump || control->branch || 
+        (info->inst_type == 0 && info->funct == 0x12) ||
+        (info->inst_type == 5)) { // jr, branch, mflo, jalr
         printf("Pass\n");
-        return;
-    }
-
-    // Handle memory operations
-    if (control->read_memory) { // lw
-        printf("Load, Address: 0x%x", ex_to_mem[2]);
-        memory_count++;
-        
-        // Read 4 bytes from memory
-        mem_to_wb[2] = read_from_memory(ex_to_mem[2]);
-        
-        mem_to_wb[4] = ex_to_mem[4]; // Register destination
-        printf(", Value: 0x%x", mem_to_wb[2]);
-    } else if (control->write_memory) { // sw
-        printf("Store, Address: 0x%x, Value: 0x%x", ex_to_mem[2], ex_to_mem[3]);
-        memory_count++;
-        
-        // Write 4 bytes to memory
-        write_to_memory(ex_to_mem[2], ex_to_mem[3]);
-    } else {
-        printf("Pass");
-        mem_to_wb[3] = ex_to_mem[2]; // ALU result
-        mem_to_wb[4] = ex_to_mem[4]; // Register destination
+        return 0;
     }
     
-    printf("\n");
+    // 메모리 읽기
+    if (control->mem_read) {
+        memory_data = read_from_memory(address);
+        printf("Load, Address: 0x%x, Value: 0x%x\n", address, memory_data);
+        memory_count++;
+    }
+    // 메모리 쓰기
+    else if (control->mem_write) {
+        write_to_memory(address, write_data);
+        printf("Store, Address: 0x%x, Value: 0x%x\n", address, write_data);
+        memory_count++;
+    }
+    else {
+        printf("Pass\n");
+    }
+    
+    return memory_data;
 }
 
-void writeback_stage(Registers* registers, ControlSignals* control, uint32_t* mem_to_wb) {
+// 쓰기 단계
+void write_back(uint32_t alu_result, uint32_t memory_data, InstructionInfo* info, ControlSignals* control, Registers* registers) {
     printf("\t[Write Back] newPC: 0x%x", registers->program_counter);
     
-    // Setup control signals for writeback
-    initialize_control(control);
-    setup_writeback_stage_control(control, mem_to_wb);
-    
-    // Skip writeback if needed (for branches, jumps, stores)
-    if (control->write_register == 0) {
+    // 레지스터 쓰기가 활성화되지 않은 경우 생략
+    if (!control->reg_write) {
         printf("\n");
         return;
     }
     
-    // Determine value to write to register
-    if (control->write_result_from_memory) { // lw
-        registers->regs[mem_to_wb[4]] = mem_to_wb[2]; // From memory
-    } else { // R-type or I-type (not lw)
-        registers->regs[mem_to_wb[4]] = mem_to_wb[3]; // From ALU
+    // 목적지 레지스터 선택
+    uint32_t write_reg;
+    if (control->reg_dst) {
+        write_reg = info->rd; // R-type (rd 사용)
+    } else {
+        if (info->opcode == 3) { // jal
+            write_reg = 31; // $ra = 31
+        } else {
+            write_reg = info->rt; // I-type (rt 사용)
+        }
+    }
+    
+    // 쓸 데이터 선택
+    uint32_t write_data;
+    if (control->mem_to_reg) {
+        write_data = memory_data; // 메모리에서 읽은 값 사용
+    } else {
+        write_data = alu_result; // ALU 결과 사용
+    }
+    
+    // 레지스터에 쓰기 (r0는 항상 0)
+    if (write_reg != 0) {
+        registers->regs[write_reg] = write_data;
+        printf(", R%d = 0x%x", write_reg, write_data);
     }
     
     printf("\n");
 }
 
-//다음 사이클을 위해 파이프라인 레지스터 초기화
-void clear_pipeline_registers(uint32_t* instruction, uint32_t* address_info, uint32_t* id_to_ex, uint32_t* ex_to_mem, uint32_t* mem_to_wb) {
-    *instruction = 0;
-    
-    // Clear address info registers (PC, jump address, etc.)
-    for (int i = 0; i < 3; i++) {
-        address_info[i] = 0;
-    }
-    
-    // Clear ID/EX pipeline registers
-    for (int i = 0; i < 8; i++) {
-        id_to_ex[i] = 0;
-    }
-    
-    // Clear EX/MEM pipeline registers
-    for (int i = 0; i < 5; i++) {
-        ex_to_mem[i] = 0;
-    }
-    
-    // Clear MEM/WB pipeline registers
-    for (int i = 0; i < 5; i++) {
-        mem_to_wb[i] = 0;
-    }
-}
-
-// Run the processor
-void run_processor(Registers* registers, uint8_t* memory) {
-    uint32_t instruction = 0;
-    uint32_t address_info[3];     
-    uint32_t id_to_ex[8];         
-    uint32_t ex_to_mem[5];       
-    uint32_t mem_to_wb[5];        
+// 단일 사이클 실행 함수
+void execute_cycle(Registers* registers, uint8_t* memory) {
+    // 임시 구조체 변수들
+    InstructionInfo info;
     ControlSignals control;
     
-    initialize_control(&control);
+    // 1. 명령어 인출
+    uint32_t instruction = instruction_fetch(registers, memory);
+    
+    // 종료 조건 검사
+    if (instruction == 0) {
+        printf("\tNOP\n\n");
+        return;
+    }
+    
+    // 2. 명령어 디코드 및 레지스터 읽기
+    instruction_decode(instruction, registers, &info, &control);
+    
+    // 3. ALU 연산 실행
+    uint32_t alu_result = execute_instruction(&info, &control, registers);
+    
+    // 4. 메모리 접근
+    uint32_t memory_data = memory_access(alu_result, info.rt_value, &control, &info);
+    
+    // 5. 레지스터 쓰기
+    write_back(alu_result, memory_data, &info, &control, registers);
+    
+    printf("\n");
+}
 
+// 프로세서 실행
+void run_processor(Registers* registers, uint8_t* memory) {
     while (registers->program_counter != 0xffffffff) {
-        printf("12345678> Cycle : %d\n", instruction_count);
+        printf("================================\n");
+        printf("Cycle : %d\n", instruction_count);
         
-        instruction = instruction_fetch(registers, memory);
-        
-        if (instruction == 0) {
-            printf("\tNOP\n\n");
-            continue;
-        }
-        
-        // Execute pipeline stages
-        instruction_decode(registers, &control, instruction, id_to_ex, address_info);
-        instruction_execute(registers, &control, id_to_ex, ex_to_mem, address_info);
-        memory_stage(&control, ex_to_mem, mem_to_wb);
-        writeback_stage(registers, &control, mem_to_wb);
-
-        printf("\n\n");
-        
-        // Clear pipeline registers for next cycle
-        clear_pipeline_registers(&instruction, address_info, id_to_ex, ex_to_mem, mem_to_wb);
+        // 단일 사이클 실행
+        execute_cycle(registers, memory);
     }
 
-    printf("Final Result");
-    printf("\tCycles: %d, R-type instructions: %d, I-type instructions: %d, J-type instructions: %d\n", 
+    printf("===== Final Result =====\n");
+    printf("Cycles: %d, R-type instructions: %d, I-type instructions: %d, J-type instructions: %d\n", 
            instruction_count, rtype_count, itype_count, jtype_count);
-    printf("\tReturn value(v0) : %d\n", registers->regs[2]);
+    printf("Memory operations: %d, Branch instructions: %d\n", memory_count, branch_count);
+    printf("Return value(v0) : %d (0x%x)\n", registers->regs[2], registers->regs[2]);
 }
 
 void init_registers(Registers* registers) {
@@ -738,7 +758,7 @@ int main(int argc, char* argv[]) {
 
     while ((bytes_read = fread(&buffer, sizeof(uint32_t), 1, file)) > 0 && 
            memory_index < (MEMORY_SIZE - 3)) {
-        // Store in memory in big-endian format (most significant byte first)
+        // 빅엔디안 형식으로 메모리에 저장 (가장 중요한 바이트 먼저)
         memory[memory_index++] = (buffer >> 24) & 0xFF;
         memory[memory_index++] = (buffer >> 16) & 0xFF;  
         memory[memory_index++] = (buffer >> 8) & 0xFF;   
