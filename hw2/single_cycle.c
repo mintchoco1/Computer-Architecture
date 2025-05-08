@@ -305,7 +305,6 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
     printf("\t[Decode] ");
     instruction_count++;
     
-    // 초기화
     memset(info, 0, sizeof(InstructionInfo));
     
     // 현재 PC-4 저장 (분기 계산용)
@@ -314,7 +313,6 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
     // opcode 추출 [31-26]
     info->opcode = instruction >> 26;
     
-    // 명령어 타입에 따라 필드 추출
     if (info->opcode == 0) { // R-type
         decode_rtype(instruction, info);
         rtype_count++;
@@ -326,14 +324,11 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
         itype_count++;
     }
     
-    // 레지스터 값 가져오기
     info->rs_value = registers->regs[info->rs];
     info->rt_value = registers->regs[info->rt];
-    
-    // 컨트롤 시그널 설정
+
     setup_control_signals(info, control);
     
-    // 명령어 타입에 따라 출력
     printf("Type: ");
     if (info->inst_type == 0 || info->inst_type == 3 || info->inst_type == 5) { // R-type/jr/jalr
         display_rtype(info);
@@ -345,7 +340,6 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
     
     printf("\n\t    opcode: 0x%x", info->opcode);
     
-    // 명령어 타입에 따라 추가 정보 출력
     if (info->inst_type == 0 || info->inst_type == 5) { // R-type 또는 jalr
         if (info->funct != 0x08 && info->funct != 0x12 && info->funct != 0x18) {
             printf(", rs: %d (0x%x), rt: %d (0x%x), rd: %d", 
@@ -375,17 +369,11 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
     }
     printf("\n");
     
-    // 컨트롤 시그널 출력
-    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", 
-           control->reg_dst, control->reg_write, control->alu_src, 
-           (control->branch || control->jump), control->mem_read, 
-           control->mem_write, control->mem_to_reg, control->alu_op);
-    
-    // immediate 값 확장
+    printf("\t    RegDst: %d, RegWrite: %d, ALUSrc: %d, PCSrc: %d, MemRead: %d, MemWrite: %d, MemtoReg: %d, ALUOp: %d\n", control->reg_dst, control->reg_write, control->alu_src, (control->branch || control->jump), control->mem_read, control->mem_write, control->mem_to_reg, control->alu_op);
+
     extend_immediate_values(info);
 }
 
-// ALU 연산 함수
 uint32_t alu_operation(int alu_op, uint32_t operand1, uint32_t operand2) {
     uint32_t result = 0;
     
