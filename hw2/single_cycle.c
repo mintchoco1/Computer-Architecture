@@ -45,7 +45,7 @@ typedef struct {
     uint32_t shamt;         
     uint32_t funct;       
     uint32_t jump_target; 
-    uint32_t inst_type;   
+    uint32_t inst_type;//r, i, j, jr, branch, jalr
     uint32_t pc_plus_4;  
 } InstructionInfo;
 
@@ -271,7 +271,6 @@ void instruction_decode(uint32_t instruction, Registers* registers, InstructionI
     
     memset(info, 0, sizeof(InstructionInfo));
     
-    // 현재 PC-4 저장 (분기 계산용)
     info->pc_plus_4 = registers->program_counter - 4;
     
     // opcode 추출 [31-26]
@@ -480,14 +479,12 @@ uint32_t execute_instruction(InstructionInfo* info, ControlSignals* control, Reg
         return 0;
     }
     
-    // lui 명령어 특별 처리
     if (info->opcode == 15) { // lui
         alu_result = info->immediate << 16;
         printf("LUI = 0x%x\n", alu_result);
         return alu_result;
     }
     
-    // mflo 명령어 특별 처리
     if (info->inst_type == 0 && info->funct == 0x12) { // mflo
         alu_result = low_word;
         printf("MFLO = 0x%x\n", alu_result);
@@ -496,14 +493,12 @@ uint32_t execute_instruction(InstructionInfo* info, ControlSignals* control, Reg
     
     uint32_t operand1, operand2;
     
-    // 시프트 명령어 특별 처리
     if (info->inst_type == 0 && (info->funct == 0x00 || info->funct == 0x02)) { // sll, srl
         operand1 = info->rt_value;
         operand2 = info->shamt;
     } else {
         operand1 = info->rs_value;
-        
-        // ALUSrc 컨트롤 시그널에 따라 두 번째 피연산자 선택
+    
         if (control->alu_src) {
             operand2 = info->immediate; // immediate 값 사용
         } else {
