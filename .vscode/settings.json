@@ -62,6 +62,7 @@
     "stdint.h": "c",
     "datapath2.h": "c",
     "stdio.h": "c",
-    "stdbool.h": "c"
+    "stdbool.h": "c",
+    "cstdint": "c"
   }
 }
