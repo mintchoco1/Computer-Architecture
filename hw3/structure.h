@@ -35,6 +35,8 @@ typedef struct {
     uint32_t rs_value;
     uint32_t rt_value;
     uint32_t inst_type; //r, i, j, jr, branch, jalr
+    uint32_t jump_target; //jump target
+    uint32_t pc_plus_4; //pc + 4
 } Instruction;
 
 //==========Latches==========//
@@ -78,8 +80,14 @@ extern IF_ID_Latch if_id_latch;
 extern ID_EX_Latch id_ex_latch;
 extern EX_MEM_Latch ex_mem_latch;
 extern MEM_WB_Latch mem_wb_latch;
+extern Registers registers;
 
 typedef struct {
     int forwarding_a;
     int forwarding_b;
 } ForwardingUnit;
+
+extern void decode_rtype(uint32_t, Instruction*);
+extern void decode_itype(uint32_t, Instruction*);
+extern void decode_jtype(uint32_t, Instruction*);
+extern void setup_control_signals(Instruction*, Control_Signals*);
