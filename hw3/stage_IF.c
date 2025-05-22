@@ -10,7 +10,7 @@ void stage_IF(){
         return;
     }
 
-        // 메모리 범위 검사
+    // 메모리 범위 검사
     if (registers.pc + 3 >= MEMORY_SIZE) {
         printf("Memory access out of bounds at PC=0x%08x\n", registers.pc);
         if_id_latch.valid = false;
