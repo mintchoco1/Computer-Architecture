@@ -1,131 +1,119 @@
 #include "structure.h"
 #include <stdlib.h>
-#include <time.h>
 
-/*******************************************************
- *  Global definitions (storage actually allocated here)
- *******************************************************/
-uint8_t   memory[MEMORY_SIZE]   = {0};
-Registers registers            = {{0}, 0};
-IF_ID_Latch  if_id_latch  = {0};
-ID_EX_Latch  id_ex_latch  = {0};
+// 전역 변수들
+uint8_t memory[MEMORY_SIZE] = {0};
+Registers registers = {{0}, 0};
+IF_ID_Latch if_id_latch = {0};
+ID_EX_Latch id_ex_latch = {0};
 EX_MEM_Latch ex_mem_latch = {0};
 MEM_WB_Latch mem_wb_latch = {0};
 
-/* 통계용 전역 변수 (stage_WB.c에서 extern) */
 uint64_t g_num_wb_commit = 0;
 
-/****************************************************************
- *  초기화 헬퍼들
- ****************************************************************/
-static void clear_latches(void)
-{
-    memset(&if_id_latch,  0, sizeof(if_id_latch));
-    memset(&id_ex_latch,  0, sizeof(id_ex_latch));
-    memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
-    memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
-}
-
-static void init_registers(uint32_t entry_pc)
-{
-    memset(registers.regsp, 0, sizeof(registers.regsp));
-    registers.pc = entry_pc;
-}
-
-static int load_program(const char *filename, uint32_t load_addr)
-{
-    FILE *fp = fopen(filename, "rb");
-    if (!fp) {
-        perror("fopen");
+// 프로그램 파일을 메모리에 로드
+int load_program(const char *filename) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        printf("파일을 열 수 없습니다: %s\n", filename);
         return -1;
     }
 
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    // 파일 크기 확인
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
 
-    if (load_addr + fsize >= MEMORY_SIZE) {
-        fprintf(stderr, "Program too big (size=%ld bytes) for memory.\n", fsize);
-        fclose(fp);
+    if (file_size >= MEMORY_SIZE) {
+        printf("파일이 너무 큽니다\n");
+        fclose(file);
         return -1;
     }
 
-    size_t nread = fread(&memory[load_addr], 1, fsize, fp);
-    fclose(fp);
+    // 메모리에 로드
+    size_t read_size = fread(memory, 1, file_size, file);
+    fclose(file);
 
-    if (nread != (size_t)fsize) {
-        fprintf(stderr, "Failed to read entire program\n");
+    if (read_size != file_size) {
+        printf("파일 읽기 실패\n");
         return -1;
     }
 
-    printf("Loaded %ld bytes at 0x%08x\n", fsize, load_addr);
+    printf("프로그램 로드 완료: %ld 바이트\n", file_size);
     return 0;
 }
 
-/****************************************************************
- *  Utility : dump register state (optional)
- ****************************************************************/
-static void dump_registers(void)
-{
-    printf("\n==== Register File ====");
+// 레지스터 상태 출력
+void print_registers() {
+    printf("\n=== 레지스터 상태 ===\n");
     for (int i = 0; i < 32; i++) {
-        if (i % 4 == 0) printf("\nR%02d:", i);
-        printf(" %08x", registers.regsp[i]);
+        if (i % 4 == 0) printf("\n");
+        printf("R%d: 0x%08x  ", i, registers.regsp[i]);
     }
-    printf("\nPC : %08x\n", registers.pc);
-    printf("Committed WB: %llu\n", (unsigned long long)g_num_wb_commit);
+    printf("\nPC: 0x%08x\n", registers.pc);
+    printf("완료된 명령어 수: %llu\n", (unsigned long long)g_num_wb_commit);
 }
 
-/****************************************************************
- *  메인 파이프라인 루프 (한 사이클 단위)
- ****************************************************************/
-static bool step_pipeline(void)
-{
-    /* 1) Write‑back부터 차례로 호출하여 데이터 경쟁 방지  */
-    stage_WB();   /* previous cycle results commit */
-    stage_MEM();  /* access data memory            */
-    stage_EX();   /* execute / ALU                 */
-    stage_ID();   /* decode & regfile read         */
-    stage_IF();   /* fetch next instruction        */
+// 파이프라인 한 사이클 실행
+bool run_one_cycle() {
+    // 역순으로 실행 (데이터 충돌 방지)
+    stage_WB();
+    stage_MEM();
+    stage_EX();
+    stage_ID();
+    stage_IF();
 
-    /* 2) 종료 조건:   PC==0xFFFFFFFF 이고 모든 latch가 empty */
-    bool pc_halt = (registers.pc == 0xFFFFFFFF);
+    // 종료 조건: PC가 0xFFFFFFFF이고 파이프라인이 비어있음
+    bool pc_stopped = (registers.pc == 0xFFFFFFFF);
     bool pipeline_empty = !if_id_latch.valid && !id_ex_latch.valid &&
-                          !ex_mem_latch.valid && !mem_wb_latch.valid;
-    return !(pc_halt && pipeline_empty);
+                         !ex_mem_latch.valid && !mem_wb_latch.valid;
+    
+    return !(pc_stopped && pipeline_empty);
 }
 
-/****************************************************************
- *  main
- ****************************************************************/
-int main(int argc, char *argv[])
-{
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <program.bin> [entry_pc (hex)]\n", argv[0]);
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        printf("사용법: %s <프로그램파일.bin>\n", argv[0]);
         return 1;
     }
 
-    uint32_t entry_pc = (argc >= 3) ? strtoul(argv[2], NULL, 16) : 0x00000000;
+    // 초기화
+    memset(&registers, 0, sizeof(registers));
+    memset(&if_id_latch, 0, sizeof(if_id_latch));
+    memset(&id_ex_latch, 0, sizeof(id_ex_latch));
+    memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
+    memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
+    
+    // RA 레지스터를 종료 주소로 설정
+    registers.regsp[31] = 0xFFFFFFFF;
+    registers.pc = 0;
 
-    /* 0. 초기화 */
-    clear_latches();
-    init_registers(entry_pc);
-
-    if (load_program(argv[1], entry_pc) != 0)
+    // 프로그램 로드
+    if (load_program(argv[1]) != 0) {
         return 1;
-
-    /* 1. 메인 시뮬레이션 루프 */
-    uint64_t cycles = 0;
-    clock_t t0 = clock();
-    while (step_pipeline()) {
-        cycles++;
     }
-    clock_t t1 = clock();
 
-    /* 2. 결과 출력 */
-    dump_registers();
-    printf("\nFinished in %llu cycles (%.3f s)\n", (unsigned long long)cycles,
-           (double)(t1 - t0) / CLOCKS_PER_SEC);
+    printf("MIPS 파이프라인 시뮬레이터 시작\n");
+    printf("초기 PC: 0x%08x\n", registers.pc);
+
+    // 시뮬레이션 실행
+    uint64_t cycle_count = 0;
+    while (run_one_cycle()) {
+        cycle_count++;
+        
+        // 너무 많은 사이클이면 무한루프 방지
+        if (cycle_count > 1000000) {
+            printf("너무 많은 사이클 실행됨. 중단합니다.\n");
+            break;
+        }
+    }
+
+    // 결과 출력
+    printf("\n=== 시뮬레이션 완료 ===\n");
+    printf("총 사이클 수: %llu\n", (unsigned long long)cycle_count);
+    printf("최종 결과값 (v0): 0x%08x\n", registers.regsp[2]);
+    
+    print_registers();
 
     return 0;
 }

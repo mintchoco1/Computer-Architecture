@@ -34,17 +34,17 @@ typedef struct {
     uint32_t immediate;
     uint32_t rs_value;
     uint32_t rt_value;
-    uint32_t inst_type; //r, i, j, jr, branch, jalr
-    uint32_t jump_target; //jump target
-    uint32_t pc_plus_4; //pc + 4
+    uint32_t inst_type; // r, i, j, jr, branch, jalr
+    uint32_t jump_target; // jump target
+    uint32_t pc_plus_4; // pc + 4
 } Instruction;
 
-//==========Latches==========//
+// Latches
 typedef struct {
     uint32_t instruction;
     uint32_t pc;
-    bool valid; //포워딩, stall, flush, nop 처리, stage 스킵 처리
-} IF_ID_Latch; //fetch된 명령어와 pc 저장
+    bool valid;
+} IF_ID_Latch;
 
 typedef struct {
     bool valid;
@@ -53,8 +53,8 @@ typedef struct {
     Control_Signals control_signals;
     uint32_t rs_value;
     uint32_t rt_value;
-    uint32_t write_reg;//목적지 레지스터
-} ID_EX_Latch; //decode된 명령어와 pc 저장
+    uint32_t write_reg;
+} ID_EX_Latch;
 
 typedef struct {
     bool valid;
@@ -64,7 +64,7 @@ typedef struct {
     uint32_t alu_result;
     uint32_t rt_value;
     uint32_t write_reg;
-} EX_MEM_Latch; //execute된 명령어와 pc 저장
+} EX_MEM_Latch;
 
 typedef struct {
     bool valid;
@@ -74,7 +74,7 @@ typedef struct {
     uint32_t alu_result;
     uint32_t rt_value;
     uint32_t write_reg;
-} MEM_WB_Latch; //memory access된 명령어와 pc 저장
+} MEM_WB_Latch;
 
 extern IF_ID_Latch if_id_latch;
 extern ID_EX_Latch id_ex_latch;
@@ -82,12 +82,16 @@ extern EX_MEM_Latch ex_mem_latch;
 extern MEM_WB_Latch mem_wb_latch;
 extern Registers registers;
 
-typedef struct {
-    int forwarding_a;
-    int forwarding_b;
-} ForwardingUnit;
+// 함수 선언들
+extern void stage_IF(void);
+extern void stage_ID(void);
+extern void stage_EX(void);
+extern void stage_MEM(void);
+extern void stage_WB(void);
 
 extern void decode_rtype(uint32_t, Instruction*);
 extern void decode_itype(uint32_t, Instruction*);
 extern void decode_jtype(uint32_t, Instruction*);
+extern void extend_imm_val(Instruction*);
 extern void setup_control_signals(Instruction*, Control_Signals*);
+extern void initialize_control(Control_Signals*);
