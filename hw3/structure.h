@@ -8,7 +8,7 @@
 extern uint8_t memory[MEMORY_SIZE];
 
 typedef struct {
-    uint32_t regsp[32];
+    uint32_t regs[32];
     uint32_t pc;
 } Registers;
 
@@ -76,6 +76,17 @@ typedef struct {
     uint32_t write_reg;
 } MEM_WB_Latch;
 
+// 해저드 관련 구조체들
+typedef struct {
+    int forward_a;  // rs 포워딩: 0=no, 1=from_ex_mem, 2=from_mem_wb
+    int forward_b;  // rt 포워딩: 0=no, 1=from_ex_mem, 2=from_mem_wb
+} ForwardingUnit;
+
+typedef struct {
+    bool stall;     // 스톨이 필요한지
+    bool flush;     // 플러시가 필요한지
+} HazardUnit;
+
 extern IF_ID_Latch if_id_latch;
 extern ID_EX_Latch id_ex_latch;
 extern EX_MEM_Latch ex_mem_latch;
@@ -95,3 +106,12 @@ extern void decode_jtype(uint32_t, Instruction*);
 extern void extend_imm_val(Instruction*);
 extern void setup_control_signals(Instruction*, Control_Signals*);
 extern void initialize_control(Control_Signals*);
+
+uint32_t alu_operate(uint32_t, uint32_t, int, Instruction*);
+
+// 해저드 관련 함수 선언들
+extern ForwardingUnit detect_forwarding(void);
+extern HazardUnit detect_hazard(void);
+extern uint32_t get_forwarded_value(int forward_type, uint32_t original_value);
+extern void handle_stall(void);
+extern void handle_branch_flush(void);

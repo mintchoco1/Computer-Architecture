@@ -18,13 +18,11 @@ void stage_WB(void)
     const Control_Signals ctrl = mem_wb_latch.control_signals;
 
     /* ② 기록할 값 선택 */
-    uint32_t write_val = ctrl.memtoreg
-                         ? mem_wb_latch.rt_value      /* LW 데이터 */
-                         : mem_wb_latch.alu_result;   /* ALU 결과 */
+    uint32_t write_val = ctrl.memtoreg ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;   /* ALU 결과 */
 
     /* ③ 레지스터 파일 쓰기 */
     if (ctrl.regwrite && mem_wb_latch.write_reg != 0) {  /* $0 보호 */
-        registers.regsp[mem_wb_latch.write_reg] = write_val;
+        registers.regs[mem_wb_latch.write_reg] = write_val;
 #ifdef DEBUG_WB
         printf("WB  : R[%d] ← 0x%08x (PC=0x%08x)\n",
                mem_wb_latch.write_reg, write_val, mem_wb_latch.pc);

@@ -1,6 +1,15 @@
 #include "structure.h"
 
 void stage_ID(){
+    // 해저드 감지 (스톨 필요한지 확인)
+    HazardUnit hazard = detect_hazard();
+    
+    // 스톨이 필요하면 처리하고 리턴
+    if (hazard.stall) {
+        handle_stall();
+        return;  // 이번 사이클은 디코딩하지 않음
+    }
+    
     // IF/ID latch가 유효한지 확인
     if(!if_id_latch.valid){
         id_ex_latch.valid = false;
@@ -30,12 +39,22 @@ void stage_ID(){
     extend_imm_val(&inst);
 
     // 레지스터 값 읽기
-    inst.rs_value = registers.regsp[inst.rs];
-    inst.rt_value = registers.regsp[inst.rt];
+    inst.rs_value = registers.regs[inst.rs];
+    inst.rt_value = registers.regs[inst.rt];
 
     // 제어 신호 설정
     Control_Signals ctrl;
     setup_control_signals(&inst, &ctrl);
+
+    // 목적지 레지스터 미리 계산 (포워딩 감지용)
+    uint32_t dest_reg = 0;
+    if (ctrl.regwrite) {
+        if (ctrl.regdst) dest_reg = inst.rd;          /* R-type */
+        else dest_reg = inst.rt;          /* I-type */
+        /* jal / jalr → $ra(31) */
+        if (inst.opcode == 3 || inst.inst_type == 5)
+            dest_reg = 31;
+    }
 
     // ID/EX latch에 정보를 저장
     id_ex_latch.valid = true;
@@ -44,6 +63,11 @@ void stage_ID(){
     id_ex_latch.control_signals = ctrl;
     id_ex_latch.rs_value = inst.rs_value;
     id_ex_latch.rt_value = inst.rt_value;
+    id_ex_latch.write_reg = dest_reg;
+
+    // 디버그 출력
+    printf("디코딩: PC=0x%08x, opcode=%d, rs=%d, rt=%d, rd=%d\n",
+           pc, inst.opcode, inst.rs, inst.rt, inst.rd);
 }
 
 void extend_imm_val(Instruction* inst)
