@@ -1,34 +1,54 @@
 #include "structure.h"
 
 extern uint64_t g_num_wb_commit;
+extern uint64_t g_r_type_count;
+extern uint64_t g_i_type_count;
+extern uint64_t g_j_type_count;
+extern uint64_t g_branch_jr_count;
+extern uint64_t g_lw_count;
+extern uint64_t g_sw_count;
+extern uint64_t g_write_reg_count;
 
-/* ─────────────────────────────────────────
- *  WB Stage : Write-Back
- *  ① MEM/WB 래치 valid 확인
- *  ② write_val 선택
- *     - memtoreg==1 → 메모리에서 읽어온 값(rt_value)
- *     - memtoreg==0 → ALU 결과(alu_result)
- *  ③ regwrite==1 이면 목적지 레지스터에 기록
- * ───────────────────────────────────────── */
 void stage_WB(void)
 {
-    /* ① NOP 전파 */
+    /* NOP 전파 */
     if (!mem_wb_latch.valid) return;
 
     const Control_Signals ctrl = mem_wb_latch.control_signals;
+    const Instruction inst = mem_wb_latch.instruction;
 
-    /* ② 기록할 값 선택 */
-    uint32_t write_val = ctrl.memtoreg ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;   /* ALU 결과 */
+    /* 기록할 값 선택 */
+    uint32_t write_val = ctrl.memtoreg ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;
 
-    /* ③ 레지스터 파일 쓰기 */
+    /* 레지스터 파일 쓰기 */
     if (ctrl.regwrite && mem_wb_latch.write_reg != 0) {  /* $0 보호 */
         registers.regs[mem_wb_latch.write_reg] = write_val;
-#ifdef DEBUG_WB
-        printf("WB  : R[%d] ← 0x%08x (PC=0x%08x)\n",
+        g_write_reg_count++;
+        printf("WB: R[%d] ← 0x%08x (PC=0x%08x)\n",
                mem_wb_latch.write_reg, write_val, mem_wb_latch.pc);
-#endif
     }
 
-    /* ④ 통계 카운터(옵션) */
+    /* 통계 카운터 업데이트 (참고 코드 방식) */
     g_num_wb_commit++;
+    
+    // 명령어 타입별 통계
+    if (inst.opcode == 0) { // R-type
+        g_r_type_count++;
+    }
+    else if (inst.opcode == 2 || inst.opcode == 3 || 
+             inst.opcode == 4 || inst.opcode == 5 ||
+             (inst.opcode == 0 && inst.funct == 0x08)) { // j, jal, beq, bne, jr
+        g_branch_jr_count++;
+    }
+    else if (inst.opcode == 35) { // lw
+        g_lw_count++;
+        g_i_type_count++;
+    }
+    else if (inst.opcode == 43) { // sw
+        g_sw_count++;
+        g_i_type_count++;
+    }
+    else { // 기타 I-type
+        g_i_type_count++;
+    }
 }

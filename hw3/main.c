@@ -9,10 +9,19 @@ ID_EX_Latch id_ex_latch = {0};
 EX_MEM_Latch ex_mem_latch = {0};
 MEM_WB_Latch mem_wb_latch = {0};
 
-/* 통계용 전역 변수 (stage_WB.c에서 extern) */
+/* 통계용 전역 변수 */
 uint64_t g_num_wb_commit = 0;
+uint64_t g_cycle_count = 0;
+uint64_t g_r_type_count = 0;
+uint64_t g_i_type_count = 0;
+uint64_t g_j_type_count = 0;
+uint64_t g_branch_jr_count = 0;
+uint64_t g_lw_count = 0;
+uint64_t g_sw_count = 0;
+uint64_t g_nop_count = 0;
+uint64_t g_write_reg_count = 0;
 
-static void clear_latches(void)
+void clear_latches(void)
 {
     memset(&if_id_latch, 0, sizeof(if_id_latch));
     memset(&id_ex_latch, 0, sizeof(id_ex_latch));
@@ -20,13 +29,15 @@ static void clear_latches(void)
     memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
 }
 
-static void init_registers(uint32_t entry_pc)
+void init_registers(uint32_t entry_pc)
 {
     memset(registers.regs, 0, sizeof(registers.regs));
     registers.pc = entry_pc;
+    registers.regs[31] = 0xFFFFFFFF;  // 종료 조건
+    registers.regs[29] = 0x1000000;   // 스택 포인터
 }
 
-static int load_program(const char *filename, uint32_t load_addr)
+int load_program(const char *filename, uint32_t load_addr)
 {
     FILE *fp = fopen(filename, "rb");
     if (!fp) {
@@ -44,19 +55,26 @@ static int load_program(const char *filename, uint32_t load_addr)
         return -1;
     }
 
-    size_t nread = fread(&memory[load_addr], 1, fsize, fp);
-    fclose(fp);
-
-    if (nread != (size_t)fsize) {
-        fprintf(stderr, "Failed to read entire program\n");
-        return -1;
+    // 참고 코드 방식으로 로드 (리틀 엔디안)
+    uint32_t temp;
+    size_t bytesRead;
+    size_t memoryIndex = load_addr;
+    
+    while ((bytesRead = fread(&temp, sizeof(uint32_t), 1, fp)) > 0 && 
+           memoryIndex < (MEMORY_SIZE - 3)) {
+        // 리틀 엔디안으로 저장
+        memory[memoryIndex++] = (temp >> 24) & 0xFF;
+        memory[memoryIndex++] = (temp >> 16) & 0xFF;
+        memory[memoryIndex++] = (temp >> 8) & 0xFF;
+        memory[memoryIndex++] = temp & 0xFF;
     }
-
-    printf("Loaded %ld bytes at 0x%08x\n", fsize, load_addr);
+    
+    fclose(fp);
+    printf("Loaded program at 0x%08x\n", load_addr);
     return 0;
 }
 
-static void dump_registers(void)
+void dump_registers(void)
 {
     printf("\n==== Register File ====");
     for (int i = 0; i < 32; i++) {
@@ -64,45 +82,42 @@ static void dump_registers(void)
         printf(" %08x", registers.regs[i]);
     }
     printf("\nPC : %08x\n", registers.pc);
-    printf("Committed WB: %llu\n", (unsigned long long)g_num_wb_commit);
 }
 
-static bool step_pipeline(void)
+void print_statistics(void)
 {
-    /* 1) Write‑back부터 차례로 호출하여 데이터 경쟁 방지  */
+    printf("\n================================================================================\n");
+    printf("Return register (r2)                 : %d\n", registers.regs[2]);
+    printf("Total clock cycle                    : %llu\n", (unsigned long long)g_cycle_count);
+    printf("R-type count                         : %llu\n", (unsigned long long)g_r_type_count);
+    printf("I-type count                         : %llu\n", (unsigned long long)g_i_type_count);
+    printf("Branch, j-type count, jr             : %llu\n", (unsigned long long)g_branch_jr_count);
+    printf("LW count                             : %llu\n", (unsigned long long)g_lw_count);
+    printf("SW count                             : %llu\n", (unsigned long long)g_sw_count);
+    printf("NOP count                            : %llu\n", (unsigned long long)g_nop_count);
+    printf("Register write count                 : %llu\n", (unsigned long long)g_write_reg_count);
+    printf("================================================================================\n");
+}
+
+bool step_pipeline(void)
+{
+    g_cycle_count++;
+    
+    printf("\n=== Cycle %llu ===\n", (unsigned long long)g_cycle_count);
+    
+    /* Write‑back부터 차례로 호출하여 데이터 경쟁 방지 */
     stage_WB();   /* previous cycle results commit */
     stage_MEM();  /* access data memory            */
     stage_EX();   /* execute / ALU                 */
     stage_ID();   /* decode & regfile read         */
     stage_IF();   /* fetch next instruction        */
 
-    /* 2) 종료 조건:   PC==0xFFFFFFFF 이고 모든 latch가 empty */
+    /* 종료 조건: PC==0xFFFFFFFF 이고 모든 latch가 empty */
     bool pc_halt = (registers.pc == 0xFFFFFFFF);
     bool pipeline_empty = !if_id_latch.valid && !id_ex_latch.valid &&
                           !ex_mem_latch.valid && !mem_wb_latch.valid;
+    
     return !(pc_halt && pipeline_empty);
-}
-
-void print_changes(int cycle) {
-    static uint32_t prev_registers[32] = {0};
-    static uint32_t prev_pc = 0;
-    
-    printf("\n=== Cycle %d 변경사항 ===\n", cycle);
-    
-    // 레지스터 변경사항
-    for (int i = 0; i < 32; i++) {
-        if (registers.regs[i] != prev_registers[i]) {
-            printf("R[%d]: 0x%08x → 0x%08x\n", 
-                   i, prev_registers[i], registers.regs[i]);
-            prev_registers[i] = registers.regs[i];
-        }
-    }
-    
-    // PC 변경사항
-    if (registers.pc != prev_pc) {
-        printf("PC: 0x%08x → 0x%08x\n", prev_pc, registers.pc);
-        prev_pc = registers.pc;
-    }
 }
 
 int main(int argc, char *argv[])
@@ -114,24 +129,38 @@ int main(int argc, char *argv[])
 
     uint32_t entry_pc = (argc >= 3) ? strtoul(argv[2], NULL, 16) : 0x00000000;
 
-    /* 0. 초기화 */
+    printf("MIPS 5-Stage Pipeline Simulator\n");
+    printf("================================\n");
+
+    /* 초기화 */
     clear_latches();
     init_registers(entry_pc);
 
     if (load_program(argv[1], entry_pc) != 0)
         return 1;
 
-    /* 1. 메인 시뮬레이션 루프 */
-    uint64_t cycles = 0;
+    printf("Starting simulation at PC=0x%08x\n", entry_pc);
+    printf("Termination condition: PC reaches 0xFFFFFFFF and pipeline is empty\n\n");
+
+    /* 메인 시뮬레이션 루프 */
     clock_t t0 = clock();
-    while (step_pipeline()) {
-        cycles++;
+    int max_cycles = 10000; // 무한 루프 방지
+    
+    while (step_pipeline() && g_cycle_count < max_cycles) {
+        // 정상 실행
     }
+    
+    if (g_cycle_count >= max_cycles) {
+        printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
+    }
+    
     clock_t t1 = clock();
 
-    /* 2. 결과 출력 */
+    /* 결과 출력 */
     dump_registers();
-    printf("\nFinished in %llu cycles (%.3f s)\n", (unsigned long long)cycles,
+    print_statistics();
+    
+    printf("\nSimulation completed in %.3f seconds\n",
            (double)(t1 - t0) / CLOCKS_PER_SEC);
 
     return 0;

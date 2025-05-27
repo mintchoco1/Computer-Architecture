@@ -61,14 +61,6 @@ void stage_EX(void) {
     // ALU 연산 수행
     uint32_t alu_result = alu_operate(operand1, operand2, ctrl.aluop, &inst);
 
-    // 브랜치 판정 (BEQ/BNE)
-    bool take_branch = false;
-    if (ctrl.branch) {
-        bool zero = (alu_result == 0);          /* BEQ용 zero flag */
-        if ((inst.opcode == 4 && zero) || (inst.opcode == 5 && !zero))     /* BNE */
-            take_branch = true;
-    }
-
     // 목적지 레지스터 선택
     uint32_t dest_reg = 0;
     if (ctrl.regwrite) {
@@ -88,23 +80,6 @@ void stage_EX(void) {
     ex_mem_latch.rt_value = rt_value; /* SW용, 포워딩된 값 사용 */
     ex_mem_latch.write_reg = dest_reg;
 
-    // 분기/점프 반영
-    if (ctrl.branch && take_branch) {
-        registers.pc = inst.pc_plus_4 + inst.immediate;
-        handle_branch_flush();  // 파이프라인 플러시
-        printf("분기 taken: PC=0x%08x → 0x%08x\n", 
-               inst.pc_plus_4, registers.pc);
-    }
-    else if (ctrl.jump) {
-        /* J / JAL / JR / JALR */
-        if (inst.inst_type == 1)                 /* J, JAL : 26-bit target */
-            registers.pc = (id_ex_latch.pc & 0xF0000000) | inst.jump_target;
-        else if (inst.inst_type == 3)            /* JR      */
-            registers.pc = operand1;  // 포워딩된 값 사용
-        else if (inst.inst_type == 5)            /* JALR    */
-            registers.pc = operand1;  // 포워딩된 값 사용
-        
-        handle_branch_flush();  // 점프도 플러시 필요
-        printf("점프: PC=0x%08x\n", registers.pc);
-    }
+    printf("실행: PC=0x%08x, ALU결과=0x%08x\n", 
+           id_ex_latch.pc, alu_result);
 }

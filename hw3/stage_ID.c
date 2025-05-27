@@ -46,6 +46,56 @@ void stage_ID(){
     Control_Signals ctrl;
     setup_control_signals(&inst, &ctrl);
 
+    // 참고 코드처럼 브랜치/점프를 ID 단계에서 처리
+    if (inst.opcode == 4 || inst.opcode == 5) { // beq, bne
+        // 브랜치 명령어 처리
+        uint32_t rs_val = inst.rs_value;
+        uint32_t rt_val = inst.rt_value;
+        
+        bool equal = (rs_val == rt_val);
+        bool take_branch = (inst.opcode == 4) ? equal : !equal; // beq : bne
+        
+        if (take_branch) {
+            // 브랜치 주소 계산 (참고 코드 방식)
+            uint32_t branch_addr = inst.immediate;
+            if ((branch_addr >> 15) == 1) { // 음수
+                branch_addr = ((branch_addr << 2) | 0xfffc0000);
+            } else { // 양수
+                branch_addr = ((branch_addr << 2) & 0x3ffc);
+            }
+            registers.pc = registers.pc + branch_addr; // pc + 4 + offset
+            printf("브랜치 taken: PC=0x%08x\n", registers.pc);
+        } else {
+            printf("브랜치 not taken\n");
+        }
+        
+        // 브랜치 명령어는 다음 단계로 진행하지 않음
+        id_ex_latch.valid = false;
+        return;
+    }
+    else if (inst.opcode == 2) { // j
+        uint32_t jump_addr = inst.jump_target << 2;
+        registers.pc = jump_addr;
+        printf("점프: PC=0x%08x\n", registers.pc);
+        id_ex_latch.valid = false;
+        return;
+    }
+    else if (inst.opcode == 3) { // jal
+        uint32_t jump_addr = inst.jump_target << 2;
+        registers.regs[31] = registers.pc + 4; // pc + 8
+        registers.pc = jump_addr;
+        printf("jal: PC=0x%08x, R31=0x%08x\n", registers.pc, registers.regs[31]);
+        id_ex_latch.valid = false;
+        return;
+    }
+    else if (inst.opcode == 0 && inst.funct == 0x08) { // jr
+        uint32_t jump_addr = inst.rs_value;
+        registers.pc = jump_addr;
+        printf("jr: PC=0x%08x\n", registers.pc);
+        id_ex_latch.valid = false;
+        return;
+    }
+
     // 목적지 레지스터 미리 계산 (포워딩 감지용)
     uint32_t dest_reg = 0;
     if (ctrl.regwrite) {
@@ -88,15 +138,12 @@ void extend_imm_val(Instruction* inst)
     }
 
     case 4: {
-        // Branch: 16-bit를 32-bit로 부호 확장 후 4배
-        int32_t off = (int16_t)inst->immediate;
-        inst->immediate = (uint32_t)(off << 2);
+        // Branch: 16-bit 그대로 유지 (ID에서 처리)
         break;
     }
 
     case 1: {
-        // J-type: 26-bit를 4배
-        inst->jump_target <<= 2;
+        // J-type: 26-bit 그대로 유지 (ID에서 처리)
         break;
     }
 

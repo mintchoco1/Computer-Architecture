@@ -1418,7 +1418,7 @@ int main(void) {
 
     //fp = fopen("data.txt", "w");
 
-    FILE* file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\test_prog\\fib2.bin", "rb"); // "filename.bin" => filename 변경해서 다른파일 넣기.
+    FILE* file = fopen("C:\\Users\\ldj23\\Desktop\\computer science\\test_prog\\fib.bin", "rb"); // "filename.bin" => filename 변경해서 다른파일 넣기.
     if (!file) {
         perror("File opening failed");
         return 1;

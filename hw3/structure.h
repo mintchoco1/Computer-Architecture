@@ -22,6 +22,9 @@ typedef struct {
     int branch;
     int jump;
     int aluop;
+    int rs_ch;      // rs를 사용하는지 여부 (포워딩 감지용)
+    int rt_ch;      // rt를 사용하는지 여부 (포워딩 감지용)
+    int ex_skip;    // 실행 단계를 건너뛸지 여부 (브랜치/점프용)
 } Control_Signals;
 
 typedef struct {
@@ -39,7 +42,6 @@ typedef struct {
     uint32_t pc_plus_4; // pc + 4
 } Instruction;
 
-// Latches
 typedef struct {
     uint32_t instruction;
     uint32_t pc;
@@ -76,10 +78,9 @@ typedef struct {
     uint32_t write_reg;
 } MEM_WB_Latch;
 
-// 해저드 관련 구조체들
 typedef struct {
-    int forward_a;  // rs 포워딩: 0=no, 1=from_ex_mem, 2=from_mem_wb
-    int forward_b;  // rt 포워딩: 0=no, 1=from_ex_mem, 2=from_mem_wb
+    int forward_a;  // rs 포워딩: 0=no, 1=from_mem_wb, 2=from_ex_mem
+    int forward_b;  // rt 포워딩: 0=no, 1=from_mem_wb, 2=from_ex_mem
 } ForwardingUnit;
 
 typedef struct {
@@ -93,7 +94,6 @@ extern EX_MEM_Latch ex_mem_latch;
 extern MEM_WB_Latch mem_wb_latch;
 extern Registers registers;
 
-// 함수 선언들
 extern void stage_IF(void);
 extern void stage_ID(void);
 extern void stage_EX(void);
@@ -109,9 +109,10 @@ extern void initialize_control(Control_Signals*);
 
 uint32_t alu_operate(uint32_t, uint32_t, int, Instruction*);
 
-// 해저드 관련 함수 선언들
 extern ForwardingUnit detect_forwarding(void);
+extern ForwardingUnit detect_branch_forwarding(void);
 extern HazardUnit detect_hazard(void);
 extern uint32_t get_forwarded_value(int forward_type, uint32_t original_value);
+extern uint32_t get_branch_forwarded_value(int forward_type, uint32_t reg_index);
 extern void handle_stall(void);
 extern void handle_branch_flush(void);
