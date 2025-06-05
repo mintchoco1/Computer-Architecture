@@ -1,5 +1,8 @@
 #include "structure.h"
 
+extern uint64_t g_branch_count;
+extern uint64_t g_branch_taken;
+
 void stage_ID(){
     // 해저드 감지 (스톨 필요한지 확인)
     HazardUnit hazard = detect_hazard();
@@ -7,7 +10,7 @@ void stage_ID(){
     // 스톨이 필요하면 처리하고 리턴
     if (hazard.stall) {
         handle_stall();
-        return;  // 이번 사이클은 디코딩하지 않음
+        return;
     }
     
     // IF/ID latch가 유효한지 확인
@@ -16,14 +19,13 @@ void stage_ID(){
         return;
     }
 
-    // IF/ID latch에서 instruction과 pc를 가져옴
     uint32_t instruction = if_id_latch.instruction;
     uint32_t pc = if_id_latch.pc;
 
     Instruction inst;
     memset(&inst, 0, sizeof(inst));
 
-    inst.opcode = instruction >> 26; // opcode 추출
+    inst.opcode = instruction >> 26;
     inst.pc_plus_4 = pc + 4;
 
     // 명령어 타입에 따라 디코딩
@@ -35,7 +37,6 @@ void stage_ID(){
         decode_itype(instruction, &inst);
     }
 
-    // immediate 값 확장
     extend_imm_val(&inst);
 
     // 레지스터 값 읽기
@@ -46,30 +47,36 @@ void stage_ID(){
     Control_Signals ctrl;
     setup_control_signals(&inst, &ctrl);
 
-    // 참고 코드처럼 브랜치/점프를 ID 단계에서 처리
+    // 브랜치 명령어 처리 (간단한 방식 - 항상 not-taken으로 예측)
     if (inst.opcode == 4 || inst.opcode == 5) { // beq, bne
-        // 브랜치 명령어 처리
+        g_branch_count++;
+        
         uint32_t rs_val = inst.rs_value;
         uint32_t rt_val = inst.rt_value;
-        
         bool equal = (rs_val == rt_val);
-        bool take_branch = (inst.opcode == 4) ? equal : !equal; // beq : bne
+        bool taken = (inst.opcode == 4) ? equal : !equal; // beq : bne
         
-        if (take_branch) {
-            // 브랜치 주소 계산 (참고 코드 방식)
-            uint32_t branch_addr = inst.immediate;
-            if ((branch_addr >> 15) == 1) { // 음수
-                branch_addr = ((branch_addr << 2) | 0xfffc0000);
+        if (taken) {
+            g_branch_taken++;
+            
+            // 브랜치 타겟 계산
+            uint32_t branch_offset = inst.immediate;
+            if ((branch_offset >> 15) == 1) { // 음수
+                branch_offset = ((branch_offset << 2) | 0xfffc0000);
             } else { // 양수
-                branch_addr = ((branch_addr << 2) & 0x3ffc);
+                branch_offset = ((branch_offset << 2) & 0x3ffc);
             }
-            registers.pc = registers.pc + branch_addr; // pc + 4 + offset
+            uint32_t target = pc + 4 + branch_offset;
+            
+            registers.pc = target;
             printf("브랜치 taken: PC=0x%08x\n", registers.pc);
+            
+            // 파이프라인 플러시 (always not-taken 예측이므로 taken시 플러시)
+            handle_branch_flush();
         } else {
             printf("브랜치 not taken\n");
         }
         
-        // 브랜치 명령어는 다음 단계로 진행하지 않음
         id_ex_latch.valid = false;
         return;
     }
@@ -77,14 +84,16 @@ void stage_ID(){
         uint32_t jump_addr = inst.jump_target << 2;
         registers.pc = jump_addr;
         printf("점프: PC=0x%08x\n", registers.pc);
+        handle_branch_flush();
         id_ex_latch.valid = false;
         return;
     }
     else if (inst.opcode == 3) { // jal
         uint32_t jump_addr = inst.jump_target << 2;
-        registers.regs[31] = registers.pc + 4; // pc + 8
+        registers.regs[31] = pc + 8; // 지연 슬롯 고려
         registers.pc = jump_addr;
         printf("jal: PC=0x%08x, R31=0x%08x\n", registers.pc, registers.regs[31]);
+        handle_branch_flush();
         id_ex_latch.valid = false;
         return;
     }
@@ -92,21 +101,21 @@ void stage_ID(){
         uint32_t jump_addr = inst.rs_value;
         registers.pc = jump_addr;
         printf("jr: PC=0x%08x\n", registers.pc);
+        handle_branch_flush();
         id_ex_latch.valid = false;
         return;
     }
 
-    // 목적지 레지스터 미리 계산 (포워딩 감지용)
+    // 목적지 레지스터 계산
     uint32_t dest_reg = 0;
     if (ctrl.regwrite) {
-        if (ctrl.regdst) dest_reg = inst.rd;          /* R-type */
-        else dest_reg = inst.rt;          /* I-type */
-        /* jal / jalr → $ra(31) */
-        if (inst.opcode == 3 || inst.inst_type == 5)
+        if (ctrl.regdst) dest_reg = inst.rd;
+        else dest_reg = inst.rt;
+        if (inst.opcode == 3 || inst.inst_type == 5) // jal, jalr
             dest_reg = 31;
     }
 
-    // ID/EX latch에 정보를 저장
+    // ID/EX latch에 정보 저장
     id_ex_latch.valid = true;
     id_ex_latch.pc = pc;
     id_ex_latch.instruction = inst;
@@ -115,9 +124,7 @@ void stage_ID(){
     id_ex_latch.rt_value = inst.rt_value;
     id_ex_latch.write_reg = dest_reg;
 
-    // 디버그 출력
-    printf("디코딩: PC=0x%08x, opcode=%d, rs=%d, rt=%d, rd=%d\n",
-           pc, inst.opcode, inst.rs, inst.rt, inst.rd);
+    printf("디코딩: PC=0x%08x, %s\n", pc, get_instruction_name(inst.opcode, inst.funct));
 }
 
 void extend_imm_val(Instruction* inst)
@@ -136,17 +143,6 @@ void extend_imm_val(Instruction* inst)
         }
         break;
     }
-
-    case 4: {
-        // Branch: 16-bit 그대로 유지 (ID에서 처리)
-        break;
-    }
-
-    case 1: {
-        // J-type: 26-bit 그대로 유지 (ID에서 처리)
-        break;
-    }
-
     default:
         break;
     }

@@ -10,21 +10,34 @@ uint32_t alu_operate(uint32_t operand1, uint32_t operand2, int aluop, Instructio
         case 6:  return operand2 << 16;                               /* lui */
         case 2: {                                                     /* R-type */
             switch (inst->funct) {
-                case 0x20: /* add  */ return operand1 + operand2;
-                case 0x21: /* addu */ return operand1 + operand2;
-                case 0x22: /* sub  */ return operand1 - operand2;
-                case 0x23: /* subu */ return operand1 - operand2;
-                case 0x24: /* and  */ return operand1 & operand2;
-                case 0x25: /* or   */ return operand1 | operand2;
-                case 0x27: /* nor  */ return ~(operand1 | operand2);
-                case 0x2a: /* slt  */ return ((int32_t)operand1 < (int32_t)operand2);
-                case 0x2b: /* sltu */ return (operand1 < operand2);
-                case 0x00: /* sll  */ return operand2 << inst->shamt;
-                case 0x02: /* srl  */ return operand2 >> inst->shamt;
-                default:            return 0;                 /* 미지원 */
+                case 0x20: /* add  */ 
+                    return operand1 + operand2;
+                case 0x21: /* addu */ 
+                    return operand1 + operand2;
+                case 0x22: /* sub  */ 
+                    return operand1 - operand2;
+                case 0x23: /* subu */ 
+                    return operand1 - operand2;
+                case 0x24: /* and  */ 
+                    return operand1 & operand2;
+                case 0x25: /* or   */ 
+                    return operand1 | operand2;
+                case 0x27: /* nor  */ 
+                    return ~(operand1 | operand2);
+                case 0x2a: /* slt  */ 
+                    return ((int32_t)operand1 < (int32_t)operand2);
+                case 0x2b: /* sltu */ 
+                    return (operand1 < operand2);
+                case 0x00: /* sll  */ 
+                    return operand2 << inst->shamt;
+                case 0x02: /* srl  */ 
+                    return operand2 >> inst->shamt;
+                default:            
+                    return 0;                 /* 미지원 */
             }
         }
-        default: return 0;
+        default: 
+            return 0;
     }
 }
 

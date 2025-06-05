@@ -1,6 +1,5 @@
 #include "structure.h"
 #include <stdlib.h>
-#include <time.h>
 
 uint8_t memory[MEMORY_SIZE] = {0};
 Registers registers = {{0}, 0};
@@ -9,7 +8,6 @@ ID_EX_Latch id_ex_latch = {0};
 EX_MEM_Latch ex_mem_latch = {0};
 MEM_WB_Latch mem_wb_latch = {0};
 
-/* 통계용 전역 변수 */
 uint64_t g_num_wb_commit = 0;
 uint64_t g_cycle_count = 0;
 uint64_t g_r_type_count = 0;
@@ -20,6 +18,9 @@ uint64_t g_lw_count = 0;
 uint64_t g_sw_count = 0;
 uint64_t g_nop_count = 0;
 uint64_t g_write_reg_count = 0;
+uint64_t g_branch_count = 0;
+uint64_t g_branch_taken = 0;
+uint64_t g_stall_count = 0;
 
 void clear_latches(void)
 {
@@ -45,24 +46,18 @@ int load_program(const char *filename, uint32_t load_addr)
         return -1;
     }
 
-    fseek(fp, 0, SEEK_END);
-    long fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-
-    if (load_addr + fsize >= MEMORY_SIZE) {
-        fprintf(stderr, "Program too big (size=%ld bytes) for memory.\n", fsize);
-        fclose(fp);
-        return -1;
-    }
-
-    // 참고 코드 방식으로 로드 (리틀 엔디안)
     uint32_t temp;
     size_t bytesRead;
     size_t memoryIndex = load_addr;
     
-    while ((bytesRead = fread(&temp, sizeof(uint32_t), 1, fp)) > 0 && 
-           memoryIndex < (MEMORY_SIZE - 3)) {
-        // 리틀 엔디안으로 저장
+    while ((bytesRead = fread(&temp, sizeof(uint32_t), 1, fp)) > 0) {
+        if (memoryIndex >= MEMORY_SIZE - 3) {
+            fprintf(stderr, "Program too big for memory.\n");
+            fclose(fp);
+            return -1;
+        }
+        
+        // 빅 엔디안으로 저장
         memory[memoryIndex++] = (temp >> 24) & 0xFF;
         memory[memoryIndex++] = (temp >> 16) & 0xFF;
         memory[memoryIndex++] = (temp >> 8) & 0xFF;
@@ -70,7 +65,7 @@ int load_program(const char *filename, uint32_t load_addr)
     }
     
     fclose(fp);
-    printf("Loaded program at 0x%08x\n", load_addr);
+    printf("Loaded program at 0x%08x, size: %zu bytes\n", load_addr, memoryIndex - load_addr);
     return 0;
 }
 
@@ -82,6 +77,82 @@ void dump_registers(void)
         printf(" %08x", registers.regs[i]);
     }
     printf("\nPC : %08x\n", registers.pc);
+}
+
+const char* get_instruction_name(uint32_t opcode, uint32_t funct) {
+    switch (opcode) {
+        case 0: // R-type
+            switch (funct) {
+                case 0x20: return "add";
+                case 0x21: return "addu";
+                case 0x22: return "sub";
+                case 0x23: return "subu";
+                case 0x24: return "and";
+                case 0x25: return "or";
+                case 0x27: return "nor";
+                case 0x2a: return "slt";
+                case 0x2b: return "sltu";
+                case 0x00: return "sll";
+                case 0x02: return "srl";
+                case 0x08: return "jr";
+                case 0x09: return "jalr";
+                default: return "unknown_r";
+            }
+        case 2: return "j";
+        case 3: return "jal";
+        case 4: return "beq";
+        case 5: return "bne";
+        case 8: return "addi";
+        case 9: return "addiu";
+        case 10: return "slti";
+        case 11: return "sltiu";
+        case 12: return "andi";
+        case 13: return "ori";
+        case 15: return "lui";
+        case 35: return "lw";
+        case 43: return "sw";
+        default: return "unknown";
+    }
+}
+
+void print_pipeline_state(void) {
+    printf("Pipeline: ");
+    
+    // IF
+    printf("IF[");
+    if (if_id_latch.valid) {
+        printf("0x%x", if_id_latch.pc);
+    } else {
+        printf("NOP");
+    }
+    printf("] ");
+    
+    // ID
+    printf("ID[");
+    if (id_ex_latch.valid) {
+        printf("%s", get_instruction_name(id_ex_latch.instruction.opcode, id_ex_latch.instruction.funct));
+    } else {
+        printf("NOP");
+    }
+    printf("] ");
+    
+    // EX
+    printf("EX[");
+    if (ex_mem_latch.valid) {
+        printf("%s", get_instruction_name(ex_mem_latch.instruction.opcode, ex_mem_latch.instruction.funct));
+    } else {
+        printf("NOP");
+    }
+    printf("] ");
+    
+    // MEM
+    printf("MEM[");
+    if (mem_wb_latch.valid) {
+        printf("%s", get_instruction_name(mem_wb_latch.instruction.opcode, mem_wb_latch.instruction.funct));
+    } else {
+        printf("NOP");
+    }
+    printf("]\n");
 }
 
 void print_statistics(void)
@@ -96,6 +167,9 @@ void print_statistics(void)
     printf("SW count                             : %llu\n", (unsigned long long)g_sw_count);
     printf("NOP count                            : %llu\n", (unsigned long long)g_nop_count);
     printf("Register write count                 : %llu\n", (unsigned long long)g_write_reg_count);
+    printf("Stall count                          : %llu\n", (unsigned long long)g_stall_count);
+    printf("Branch count                         : %llu\n", (unsigned long long)g_branch_count);
+    printf("Branch taken                         : %llu\n", (unsigned long long)g_branch_taken);
     printf("================================================================================\n");
 }
 
@@ -105,17 +179,16 @@ bool step_pipeline(void)
     
     printf("\n=== Cycle %llu ===\n", (unsigned long long)g_cycle_count);
     
-    /* Write‑back부터 차례로 호출하여 데이터 경쟁 방지 */
-    stage_WB();   /* previous cycle results commit */
-    stage_MEM();  /* access data memory            */
-    stage_EX();   /* execute / ALU                 */
-    stage_ID();   /* decode & regfile read         */
-    stage_IF();   /* fetch next instruction        */
+    stage_WB();   
+    stage_MEM();  
+    stage_EX();   
+    stage_ID();   
+    stage_IF();   
 
-    /* 종료 조건: PC==0xFFFFFFFF 이고 모든 latch가 empty */
+    print_pipeline_state();
+
     bool pc_halt = (registers.pc == 0xFFFFFFFF);
-    bool pipeline_empty = !if_id_latch.valid && !id_ex_latch.valid &&
-                          !ex_mem_latch.valid && !mem_wb_latch.valid;
+    bool pipeline_empty = !if_id_latch.valid && !id_ex_latch.valid && !ex_mem_latch.valid && !mem_wb_latch.valid;
     
     return !(pc_halt && pipeline_empty);
 }
@@ -132,7 +205,6 @@ int main(int argc, char *argv[])
     printf("MIPS 5-Stage Pipeline Simulator\n");
     printf("================================\n");
 
-    /* 초기화 */
     clear_latches();
     init_registers(entry_pc);
 
@@ -140,28 +212,21 @@ int main(int argc, char *argv[])
         return 1;
 
     printf("Starting simulation at PC=0x%08x\n", entry_pc);
-    printf("Termination condition: PC reaches 0xFFFFFFFF and pipeline is empty\n\n");
 
-    /* 메인 시뮬레이션 루프 */
-    clock_t t0 = clock();
-    int max_cycles = 10000; // 무한 루프 방지
+    int max_cycles = 10000; 
     
     while (step_pipeline() && g_cycle_count < max_cycles) {
-        // 정상 실행
+        // getchar(); // 주석 해제하면 단계별 실행
     }
     
     if (g_cycle_count >= max_cycles) {
         printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
     }
-    
-    clock_t t1 = clock();
 
-    /* 결과 출력 */
     dump_registers();
     print_statistics();
     
-    printf("\nSimulation completed in %.3f seconds\n",
-           (double)(t1 - t0) / CLOCKS_PER_SEC);
+    printf("\nSimulation completed.\n");
 
     return 0;
 }
