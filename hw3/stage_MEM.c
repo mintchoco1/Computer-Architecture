@@ -1,4 +1,3 @@
-// stage_MEM.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
 extern uint64_t lw_count;
@@ -10,7 +9,6 @@ void stage_MEM() {
         return;
     }
 
-    // 참고 코드처럼 초기화
     memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
     
     Instruction inst = ex_mem_latch.instruction;
@@ -42,7 +40,7 @@ void stage_MEM() {
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
 
-    // lw sw 외에는 return (참고 코드와 동일한 로직)
+    // lw sw 외에는 return 
     if ((ctrl.mem_read == 0) && (ctrl.mem_write == 0)) {
         mem_wb_latch.valid = true;
         mem_wb_latch.pc = ex_mem_latch.pc;
@@ -50,7 +48,7 @@ void stage_MEM() {
         return;
     }
 
-    // 메모리 읽기 (LW) - 참고 코드와 동일한 방식
+    // 메모리 읽기 (LW)
     if (ctrl.mem_read) {
         lw_count++;
         if (address + 4 > MEMORY_SIZE) {
@@ -66,7 +64,7 @@ void stage_MEM() {
         }
     }
 
-    // 메모리 쓰기 (SW) - 참고 코드와 동일한 방식
+    // 메모리 쓰기 (SW) 
     if (ctrl.mem_write) {
         sw_count++;
         if (address + 4 > MEMORY_SIZE) {

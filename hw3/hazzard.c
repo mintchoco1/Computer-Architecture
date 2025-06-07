@@ -181,7 +181,6 @@ uint32_t get_forwarded_value(int forward_type, uint32_t original_value) {
 }
 
 void handle_stall(void) {
-    // 참고 코드와 동일하게 PC만 되돌리기
     registers.pc -= 4;
     printf("스톨: PC=0x%08x\n", registers.pc);
 }

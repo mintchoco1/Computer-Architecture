@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
     uint32_t instruction;
     uint32_t pc;
-    uint32_t next_pc;  // 추가
+    uint32_t next_pc;  
     bool valid;
     uint32_t reg_src;
     uint32_t reg_tar;
@@ -140,13 +140,20 @@ extern uint32_t get_forwarded_value(int forward_type, uint32_t original_value);
 extern void handle_stall(void);
 extern void handle_branch_flush(void);
 
-// 유틸리티
+extern void init_branch_predictor(void);
+extern bool predict_branch(uint32_t pc);
+extern void update_branch_predictor(uint32_t pc, bool actual_taken, bool predicted_taken);
+extern void print_branch_prediction_stats(void);
+extern void reset_branch_predictor(void);
+
+extern uint64_t branch_predictions;
+extern uint64_t branch_correct_predictions;
+extern uint64_t branch_mispredictions;
+
 extern const char* get_instruction_name(uint32_t opcode, uint32_t funct);
 
-// extend_imm_val 함수 선언 추가
 extern void extend_imm_val(Instruction*);
 
-// 전역 변수 선언 추가
 extern uint64_t g_inst_count;
 
 #endif

@@ -15,7 +15,6 @@ void initialize_control(Control_Signals* control) {
     control->rt_ch = 0;
 }
 
-// 참고 코드와 동일한 제어 신호 설정
 void setup_control_signals(Instruction* inst, Control_Signals* control) {
     initialize_control(control);
 

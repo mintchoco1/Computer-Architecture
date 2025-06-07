@@ -1,5 +1,3 @@
-
-// stage_WB.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
 extern uint64_t write_reg_count;
@@ -11,7 +9,7 @@ void stage_WB(void) {
 
     const Control_Signals ctrl = mem_wb_latch.control_signals;
 
-    // LUI 명령어 특별 처리 (참고 코드와 동일)
+    // LUI 명령어 특별 처리 
     if (ctrl.get_imm == 3) {
         if (mem_wb_latch.write_reg != 0) {
             registers.regs[mem_wb_latch.write_reg] = mem_wb_latch.alu_result;
@@ -19,7 +17,7 @@ void stage_WB(void) {
         return;
     }
 
-    if (ctrl.reg_wb == 0) {        // reg_write 값 0이면 지우기 (참고 코드와 동일)
+    if (ctrl.reg_wb == 0) {        // reg_write 값 0이면 지우기 
         return;
     }
 

@@ -1,7 +1,5 @@
-// stage_ID.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
-// 외부 변수들을 참고 코드와 동일하게 변경
 extern uint64_t r_count;
 extern uint64_t i_count;
 extern uint64_t branch_jr_count;
@@ -17,14 +15,11 @@ void stage_ID() {
     uint32_t opcode = if_id_latch.opcode;
     uint32_t funct = if_id_latch.funct;
 
-    // 참고 코드처럼 초기화
     memset(&id_ex_latch, 0, sizeof(id_ex_latch));
 
-    // Control signals 설정
     Control_Signals ctrl;
     initialize_control(&ctrl);
     
-    // Instruction 구조체 생성
     Instruction inst;
     memset(&inst, 0, sizeof(inst));
     inst.opcode = opcode;
@@ -43,10 +38,8 @@ void stage_ID() {
         inst.jump_target = instruction & 0x3ffffff;
     }
     
-    // setup_control_signals 호출
     setup_control_signals(&inst, &ctrl);
     
-    // 참고 코드와 동일한 방식으로 카운팅
     if (ctrl.reg_dst == 1) {
         r_count++;
     }
@@ -57,12 +50,12 @@ void stage_ID() {
         branch_jr_count++;
     }
     
-    // write_reg 설정 (참고 코드 순서대로)
+    // write_reg 설정 
     if (ctrl.reg_dst == 1) {                                
         id_ex_latch.write_reg = (instruction >> 11) & 0x0000001f;        // rd
     }
     
-    // immediate 처리 (참고 코드와 동일)
+    // immediate 처리
     if (ctrl.get_imm != 0) {
         inst.immediate = instruction & 0xffff;
         id_ex_latch.write_reg = inst.rt;
@@ -80,20 +73,26 @@ void stage_ID() {
         }
     }
     
-    // 브랜치/점프 처리 (참고 코드와 완전히 동일)
+    // 브랜치/점프 처리
     if (ctrl.ex_skip == 1) {
-        // 브랜치
+        // 브랜치 명령어에 대해서만 예측 적용
         if (opcode == 0x4 || opcode == 0x5) {        // beq, bne
+            // 브랜치 예측 수행
+            bool predicted_taken = predict_branch(pc);
+            
             uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
             uint32_t oper2 = (if_id_latch.forward_b >= 1) ? if_id_latch.forward_b_val : registers.regs[inst.rt];
 
             int beq_bne = (opcode == 0x4) ? 1 : 0;   // beq = 1, bne = 0
             int check = (oper1 == oper2);      // 동등 여부 파악
-            int taken = (check == beq_bne);                                      
+            bool actual_taken = (check == beq_bne);
             
-            if (taken) {
+            // 브랜치 예측기 업데이트
+            update_branch_predictor(pc, actual_taken, predicted_taken);
+            
+            if (actual_taken) {
                 // taken
-                uint32_t sign_imm = instruction & 0xffff;                     // imm
+                uint32_t sign_imm = instruction & 0xffff;                     
                 uint32_t branchaddr = sign_imm;
 
                 if ((sign_imm >> 15) == 1) { // branch-addr
@@ -103,27 +102,37 @@ void stage_ID() {
                     branchaddr = ((sign_imm << 2) & 0x3ffc);
                 }
                 registers.pc = registers.pc + branchaddr;        // pc = pc + 4 + branchaddr
+                
+                // 예측이 틀렸다면 파이프라인 플러시 필요
+                if (!predicted_taken) {
+                    printf("Branch misprediction: predicted not taken, actually taken (PC: 0x%x)\n", pc);
+                    // 필요시 플러시 로직 추가
+                }
                 return;
             }
             else {
                 // not taken
+                if (predicted_taken) {
+                    printf("Branch misprediction: predicted taken, actually not taken (PC: 0x%x)\n", pc);
+                    // 필요시 플러시 로직 추가  
+                }
                 return;
             }
         }   
-        // J
+        // J (점프는 예측 불필요 - 항상 taken)
         else if (opcode == 0x2) {   // j
             uint32_t jaddr = inst.jump_target << 2;
             registers.pc = jaddr;
             return;
         }   
-        // JAL
+        // JAL (점프는 예측 불필요 - 항상 taken)
         else if (opcode == 0x3) {   // jal
             uint32_t jaddr = inst.jump_target << 2;
             registers.regs[31] = registers.pc + 4; // pc+8 (참고 코드와 동일)
             registers.pc = jaddr;
             return;
         }   
-        // JR
+        // JR (레지스터 점프는 예측하기 어려움 - 일단 예측 없이)
         else {                      // jr
             uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
             registers.pc = oper1;
@@ -131,7 +140,6 @@ void stage_ID() {
         }
     }
     
-    // 일반 명령어 처리 - 레지스터 값 읽기 (참고 코드와 동일)
     inst.rs_value = registers.regs[inst.rs];      // rs 값 read data1
     inst.rt_value = registers.regs[inst.rt];      // rt 값 read data2
     

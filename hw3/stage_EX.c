@@ -1,4 +1,3 @@
-// stage_EX.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
 uint32_t alu_operate(uint32_t operand1, uint32_t operand2, int alu_ctrl, Instruction *inst) {
@@ -19,8 +18,8 @@ uint32_t alu_operate(uint32_t operand1, uint32_t operand2, int alu_ctrl, Instruc
     else if (alu_ctrl == 0b1100) {        // nor
         temp = ~(operand1 | operand2);
     }
-    else if (alu_ctrl == 0b0111) {        // slt (참고 코드와 동일하게 수정)
-        temp = (operand2 > operand1) ? 1 : 0;  // 참고 코드의 로직
+    else if (alu_ctrl == 0b0111) {        // slt 
+        temp = (operand2 > operand1) ? 1 : 0; 
     }
     else if (alu_ctrl == 0b1110) {        // sll
         temp = operand1 << operand2;
@@ -38,7 +37,6 @@ void stage_EX(void) {
         return;
     }
 
-    // 참고 코드처럼 초기화
     memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
 
     Instruction inst = id_ex_latch.instruction;
@@ -47,7 +45,7 @@ void stage_EX(void) {
     // 제어 신호 복사
     ex_mem_latch.control_signals = ctrl;
 
-    // LUI 명령어 특별 처리 (참고 코드와 동일)
+    // LUI 명령어 특별 처리
     if (ctrl.get_imm == 3) {
         ex_mem_latch.valid = true;
         ex_mem_latch.pc = id_ex_latch.pc;
@@ -58,18 +56,18 @@ void stage_EX(void) {
         return;
     }
 
-    // ex_skip 명령어들은 건너뛰기 (참고 코드와 동일)
+    // ex_skip 명령어들은 건너뛰기
     if (ctrl.ex_skip != 0) {
         ex_mem_latch.valid = false;
         return;
     }
 
-    // reg_write 값 id_ex에서 ex_mem 으로 옮겨주기 (참고 코드와 동일)
+    // reg_write 값 id_ex에서 ex_mem 으로 옮겨주기
     if (ctrl.reg_wb == 1) {         
         ex_mem_latch.write_reg = id_ex_latch.write_reg;
     }
 
-    // 포워딩 처리 (참고 코드 방식)
+    // 포워딩 처리 
     uint32_t operand1 = (id_ex_latch.forward_a >= 1) ? id_ex_latch.forward_a_val : id_ex_latch.rs_value;
 
     uint32_t alu_result = 0;
@@ -78,14 +76,14 @@ void stage_EX(void) {
     if (ctrl.reg_dst == 1) {
         uint32_t operand2 = (id_ex_latch.forward_b >= 1) ? id_ex_latch.forward_b_val : id_ex_latch.rt_value;
 
-        // SLL, SRL은 shamt 사용 (참고 코드와 동일)
+        // SLL, SRL은 shamt 사용 
         if (ctrl.alu_ctrl >= 0b1110) {
             alu_result = alu_operate(operand2, id_ex_latch.shamt, ctrl.alu_ctrl, &inst);
         } else {
             alu_result = alu_operate(operand1, operand2, ctrl.alu_ctrl, &inst);
         }
     }
-    // SW 명령어 (참고 코드와 동일)
+    // SW 명령어 
     else if (ctrl.mem_write == 1) {
         alu_result = alu_operate(operand1, id_ex_latch.sign_imm, ctrl.alu_ctrl, &inst);
         ex_mem_latch.rt_value = (id_ex_latch.forward_b >= 1) ? id_ex_latch.forward_b_val : id_ex_latch.rt_value;
