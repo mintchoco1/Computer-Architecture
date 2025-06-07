@@ -1,98 +1,102 @@
+// stage_EX.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
-uint32_t alu_operate(uint32_t operand1, uint32_t operand2, int aluop, Instruction *inst) {
-    switch (aluop) {
-        case 0:  return operand1 + operand2;                          /* add */
-        case 1:  return operand1 - operand2;                          /* sub */
-        case 3:  return ((int32_t)operand1 < (int32_t)operand2);      /* slt */
-        case 4:  return operand1 & operand2;                          /* and */
-        case 5:  return operand1 | operand2;                          /* or  */
-        case 6:  return operand2 << 16;                               /* lui */
-        case 2: {                                                     /* R-type */
-            switch (inst->funct) {
-                case 0x20: /* add  */ 
-                    return operand1 + operand2;
-                case 0x21: /* addu */ 
-                    return operand1 + operand2;
-                case 0x22: /* sub  */ 
-                    return operand1 - operand2;
-                case 0x23: /* subu */ 
-                    return operand1 - operand2;
-                case 0x24: /* and  */ 
-                    return operand1 & operand2;
-                case 0x25: /* or   */ 
-                    return operand1 | operand2;
-                case 0x27: /* nor  */ 
-                    return ~(operand1 | operand2);
-                case 0x2a: /* slt  */ 
-                    return ((int32_t)operand1 < (int32_t)operand2);
-                case 0x2b: /* sltu */ 
-                    return (operand1 < operand2);
-                case 0x00: /* sll  */ 
-                    return operand2 << inst->shamt;
-                case 0x02: /* srl  */ 
-                    return operand2 >> inst->shamt;
-                default:            
-                    return 0;                 /* 미지원 */
-            }
-        }
-        default: 
-            return 0;
+uint32_t alu_operate(uint32_t operand1, uint32_t operand2, int alu_ctrl, Instruction *inst) {
+    uint32_t temp = 0;
+    
+    if (alu_ctrl == 0b0000) {             // and
+        temp = operand1 & operand2;
     }
+    else if (alu_ctrl == 0b0001) {        // or
+        temp = operand1 | operand2;
+    }
+    else if (alu_ctrl == 0b0010) {        // add
+        temp = operand1 + operand2;
+    }
+    else if (alu_ctrl == 0b0110) {        // sub
+        temp = operand1 - operand2;
+    }
+    else if (alu_ctrl == 0b1100) {        // nor
+        temp = ~(operand1 | operand2);
+    }
+    else if (alu_ctrl == 0b0111) {        // slt (참고 코드와 동일하게 수정)
+        temp = (operand2 > operand1) ? 1 : 0;  // 참고 코드의 로직
+    }
+    else if (alu_ctrl == 0b1110) {        // sll
+        temp = operand1 << operand2;
+    }
+    else if (alu_ctrl == 0b1111) {        // srl
+        temp = operand1 >> operand2;
+    }
+
+    return temp;
 }
 
 void stage_EX(void) {
-    // ID/EX latch에 명령어 없으면 EX/MEM latch 무효화
     if (!id_ex_latch.valid) {
         ex_mem_latch.valid = false;
         return;
     }
 
+    // 참고 코드처럼 초기화
+    memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
+
     Instruction inst = id_ex_latch.instruction;
     Control_Signals ctrl = id_ex_latch.control_signals;
 
-    // 포워딩 감지
-    ForwardingUnit forwarding = detect_forwarding();
-    
-    // 포워딩된 값들 가져오기
-    uint32_t operand1 = get_forwarded_value(forwarding.forward_a, id_ex_latch.rs_value);
-    uint32_t rt_value = get_forwarded_value(forwarding.forward_b, id_ex_latch.rt_value);
-    
-    // ALU 두 번째 피연산자 선택 (immediate vs rt)
-    uint32_t operand2 = ctrl.alusrc ? inst.immediate : rt_value;
+    // 제어 신호 복사
+    ex_mem_latch.control_signals = ctrl;
 
-    // 포워딩 디버그 출력
-    if (forwarding.forward_a != 0) {
-        printf("포워딩 A: 타입 %d, 0x%08x → 0x%08x\n", 
-               forwarding.forward_a, id_ex_latch.rs_value, operand1);
-    }
-    if (forwarding.forward_b != 0) {
-        printf("포워딩 B: 타입 %d, 0x%08x → 0x%08x\n", 
-               forwarding.forward_b, id_ex_latch.rt_value, rt_value);
+    // LUI 명령어 특별 처리 (참고 코드와 동일)
+    if (ctrl.get_imm == 3) {
+        ex_mem_latch.valid = true;
+        ex_mem_latch.pc = id_ex_latch.pc;
+        ex_mem_latch.instruction = inst;
+        ex_mem_latch.alu_result = id_ex_latch.sign_imm;
+        ex_mem_latch.rt_value = 0;
+        ex_mem_latch.write_reg = id_ex_latch.write_reg;
+        return;
     }
 
-    // ALU 연산 수행
-    uint32_t alu_result = alu_operate(operand1, operand2, ctrl.aluop, &inst);
-
-    // 목적지 레지스터 선택
-    uint32_t dest_reg = 0;
-    if (ctrl.regwrite) {
-        if (ctrl.regdst) dest_reg = inst.rd;          /* R-type */
-        else dest_reg = inst.rt;          /* I-type */
-        /* jal / jalr → $ra(31) */
-        if (inst.opcode == 3 || inst.inst_type == 5)
-            dest_reg = 31;
+    // ex_skip 명령어들은 건너뛰기 (참고 코드와 동일)
+    if (ctrl.ex_skip != 0) {
+        ex_mem_latch.valid = false;
+        return;
     }
 
-    // 다음 스테이지(EX/MEM) 래치 채우기
+    // reg_write 값 id_ex에서 ex_mem 으로 옮겨주기 (참고 코드와 동일)
+    if (ctrl.reg_wb == 1) {         
+        ex_mem_latch.write_reg = id_ex_latch.write_reg;
+    }
+
+    // 포워딩 처리 (참고 코드 방식)
+    uint32_t operand1 = (id_ex_latch.forward_a >= 1) ? id_ex_latch.forward_a_val : id_ex_latch.rs_value;
+
+    uint32_t alu_result = 0;
+
+    // R-type 명령어
+    if (ctrl.reg_dst == 1) {
+        uint32_t operand2 = (id_ex_latch.forward_b >= 1) ? id_ex_latch.forward_b_val : id_ex_latch.rt_value;
+
+        // SLL, SRL은 shamt 사용 (참고 코드와 동일)
+        if (ctrl.alu_ctrl >= 0b1110) {
+            alu_result = alu_operate(operand2, id_ex_latch.shamt, ctrl.alu_ctrl, &inst);
+        } else {
+            alu_result = alu_operate(operand1, operand2, ctrl.alu_ctrl, &inst);
+        }
+    }
+    // SW 명령어 (참고 코드와 동일)
+    else if (ctrl.mem_write == 1) {
+        alu_result = alu_operate(operand1, id_ex_latch.sign_imm, ctrl.alu_ctrl, &inst);
+        ex_mem_latch.rt_value = (id_ex_latch.forward_b >= 1) ? id_ex_latch.forward_b_val : id_ex_latch.rt_value;
+    }
+    // I-type 명령어
+    else {
+        alu_result = alu_operate(operand1, id_ex_latch.sign_imm, ctrl.alu_ctrl, &inst);
+    }
+
     ex_mem_latch.valid = true;
     ex_mem_latch.pc = id_ex_latch.pc;
     ex_mem_latch.instruction = inst;
-    ex_mem_latch.control_signals = ctrl;
     ex_mem_latch.alu_result = alu_result;
-    ex_mem_latch.rt_value = rt_value; /* SW용, 포워딩된 값 사용 */
-    ex_mem_latch.write_reg = dest_reg;
-
-    printf("실행: PC=0x%08x, ALU결과=0x%08x\n", 
-           id_ex_latch.pc, alu_result);
 }

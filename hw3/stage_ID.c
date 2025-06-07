@@ -1,151 +1,153 @@
+// stage_ID.c - 참고 코드와 일치하도록 수정
 #include "structure.h"
 
-extern uint64_t g_branch_count;
-extern uint64_t g_branch_taken;
+// 외부 변수들을 참고 코드와 동일하게 변경
+extern uint64_t r_count;
+extern uint64_t i_count;
+extern uint64_t branch_jr_count;
 
-void stage_ID(){
-    // 해저드 감지 (스톨 필요한지 확인)
-    HazardUnit hazard = detect_hazard();
-    
-    // 스톨이 필요하면 처리하고 리턴
-    if (hazard.stall) {
-        handle_stall();
-        return;
-    }
-    
-    // IF/ID latch가 유효한지 확인
-    if(!if_id_latch.valid){
+void stage_ID() {
+    if (!if_id_latch.valid) {
         id_ex_latch.valid = false;
         return;
     }
 
     uint32_t instruction = if_id_latch.instruction;
     uint32_t pc = if_id_latch.pc;
+    uint32_t opcode = if_id_latch.opcode;
+    uint32_t funct = if_id_latch.funct;
 
+    // 참고 코드처럼 초기화
+    memset(&id_ex_latch, 0, sizeof(id_ex_latch));
+
+    // Control signals 설정
+    Control_Signals ctrl;
+    initialize_control(&ctrl);
+    
+    // Instruction 구조체 생성
     Instruction inst;
     memset(&inst, 0, sizeof(inst));
-
-    inst.opcode = instruction >> 26;
-    inst.pc_plus_4 = pc + 4;
-
-    // 명령어 타입에 따라 디코딩
-    if(inst.opcode == 0){
-        decode_rtype(instruction, &inst);
-    }else if(inst.opcode == 2 || inst.opcode == 3){
-        decode_jtype(instruction, &inst);
-    }else{
-        decode_itype(instruction, &inst);
+    inst.opcode = opcode;
+    inst.rs = if_id_latch.reg_src;
+    inst.rt = if_id_latch.reg_tar;
+    inst.funct = funct;
+    
+    // R-type
+    if (opcode == 0) {
+        inst.rd = (instruction >> 11) & 0x1f;
+        inst.shamt = (instruction >> 6) & 0x1f;
     }
-
-    extend_imm_val(&inst);
-
-    // 레지스터 값 읽기
-    inst.rs_value = registers.regs[inst.rs];
-    inst.rt_value = registers.regs[inst.rt];
-
-    // 제어 신호 설정
-    Control_Signals ctrl;
+    
+    // J-type
+    if (opcode == 2 || opcode == 3) {
+        inst.jump_target = instruction & 0x3ffffff;
+    }
+    
+    // setup_control_signals 호출
     setup_control_signals(&inst, &ctrl);
-
-    // 브랜치 명령어 처리 (간단한 방식 - 항상 not-taken으로 예측)
-    if (inst.opcode == 4 || inst.opcode == 5) { // beq, bne
-        g_branch_count++;
+    
+    // 참고 코드와 동일한 방식으로 카운팅
+    if (ctrl.reg_dst == 1) {
+        r_count++;
+    }
+    if (ctrl.get_imm != 0) {
+        i_count++;
+    }
+    if (ctrl.ex_skip == 1) {
+        branch_jr_count++;
+    }
+    
+    // write_reg 설정 (참고 코드 순서대로)
+    if (ctrl.reg_dst == 1) {                                
+        id_ex_latch.write_reg = (instruction >> 11) & 0x0000001f;        // rd
+    }
+    
+    // immediate 처리 (참고 코드와 동일)
+    if (ctrl.get_imm != 0) {
+        inst.immediate = instruction & 0xffff;
+        id_ex_latch.write_reg = inst.rt;
         
-        uint32_t rs_val = inst.rs_value;
-        uint32_t rt_val = inst.rt_value;
-        bool equal = (rs_val == rt_val);
-        bool taken = (inst.opcode == 4) ? equal : !equal; // beq : bne
-        
-        if (taken) {
-            g_branch_taken++;
-            
-            // 브랜치 타겟 계산
-            uint32_t branch_offset = inst.immediate;
-            if ((branch_offset >> 15) == 1) { // 음수
-                branch_offset = ((branch_offset << 2) | 0xfffc0000);
-            } else { // 양수
-                branch_offset = ((branch_offset << 2) & 0x3ffc);
+        if (ctrl.get_imm == 1) {
+            if ((inst.immediate >> 15) == 0) {
+                inst.immediate = (inst.immediate & 0x0000ffff);
+            } else {
+                inst.immediate = (inst.immediate | 0xffff0000);
             }
-            uint32_t target = pc + 4 + branch_offset;
-            
-            registers.pc = target;
-            printf("브랜치 taken: PC=0x%08x\n", registers.pc);
-            
-            // 파이프라인 플러시 (always not-taken 예측이므로 taken시 플러시)
-            handle_branch_flush();
-        } else {
-            printf("브랜치 not taken\n");
+        } else if (ctrl.get_imm == 2) {
+            inst.immediate = (inst.immediate & 0x0000ffff);
+        } else if (ctrl.get_imm == 3) {
+            inst.immediate = inst.immediate << 16;
         }
-        
-        id_ex_latch.valid = false;
-        return;
     }
-    else if (inst.opcode == 2) { // j
-        uint32_t jump_addr = inst.jump_target << 2;
-        registers.pc = jump_addr;
-        printf("점프: PC=0x%08x\n", registers.pc);
-        handle_branch_flush();
-        id_ex_latch.valid = false;
-        return;
-    }
-    else if (inst.opcode == 3) { // jal
-        uint32_t jump_addr = inst.jump_target << 2;
-        registers.regs[31] = pc + 8; // 지연 슬롯 고려
-        registers.pc = jump_addr;
-        printf("jal: PC=0x%08x, R31=0x%08x\n", registers.pc, registers.regs[31]);
-        handle_branch_flush();
-        id_ex_latch.valid = false;
-        return;
-    }
-    else if (inst.opcode == 0 && inst.funct == 0x08) { // jr
-        uint32_t jump_addr = inst.rs_value;
-        registers.pc = jump_addr;
-        printf("jr: PC=0x%08x\n", registers.pc);
-        handle_branch_flush();
-        id_ex_latch.valid = false;
-        return;
-    }
+    
+    // 브랜치/점프 처리 (참고 코드와 완전히 동일)
+    if (ctrl.ex_skip == 1) {
+        // 브랜치
+        if (opcode == 0x4 || opcode == 0x5) {        // beq, bne
+            uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
+            uint32_t oper2 = (if_id_latch.forward_b >= 1) ? if_id_latch.forward_b_val : registers.regs[inst.rt];
 
-    // 목적지 레지스터 계산
-    uint32_t dest_reg = 0;
-    if (ctrl.regwrite) {
-        if (ctrl.regdst) dest_reg = inst.rd;
-        else dest_reg = inst.rt;
-        if (inst.opcode == 3 || inst.inst_type == 5) // jal, jalr
-            dest_reg = 31;
-    }
+            int beq_bne = (opcode == 0x4) ? 1 : 0;   // beq = 1, bne = 0
+            int check = (oper1 == oper2);      // 동등 여부 파악
+            int taken = (check == beq_bne);                                      
+            
+            if (taken) {
+                // taken
+                uint32_t sign_imm = instruction & 0xffff;                     // imm
+                uint32_t branchaddr = sign_imm;
 
-    // ID/EX latch에 정보 저장
+                if ((sign_imm >> 15) == 1) { // branch-addr
+                    branchaddr = ((sign_imm << 2) | 0xfffc0000);
+                }
+                else if ((sign_imm >> 15) == 0) {
+                    branchaddr = ((sign_imm << 2) & 0x3ffc);
+                }
+                registers.pc = registers.pc + branchaddr;        // pc = pc + 4 + branchaddr
+                return;
+            }
+            else {
+                // not taken
+                return;
+            }
+        }   
+        // J
+        else if (opcode == 0x2) {   // j
+            uint32_t jaddr = inst.jump_target << 2;
+            registers.pc = jaddr;
+            return;
+        }   
+        // JAL
+        else if (opcode == 0x3) {   // jal
+            uint32_t jaddr = inst.jump_target << 2;
+            registers.regs[31] = registers.pc + 4; // pc+8 (참고 코드와 동일)
+            registers.pc = jaddr;
+            return;
+        }   
+        // JR
+        else {                      // jr
+            uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
+            registers.pc = oper1;
+            return;
+        }
+    }
+    
+    // 일반 명령어 처리 - 레지스터 값 읽기 (참고 코드와 동일)
+    inst.rs_value = registers.regs[inst.rs];      // rs 값 read data1
+    inst.rt_value = registers.regs[inst.rt];      // rt 값 read data2
+    
+    // ID/EX 래치 업데이트
     id_ex_latch.valid = true;
     id_ex_latch.pc = pc;
     id_ex_latch.instruction = inst;
     id_ex_latch.control_signals = ctrl;
     id_ex_latch.rs_value = inst.rs_value;
     id_ex_latch.rt_value = inst.rt_value;
-    id_ex_latch.write_reg = dest_reg;
-
-    printf("디코딩: PC=0x%08x, %s\n", pc, get_instruction_name(inst.opcode, inst.funct));
-}
-
-void extend_imm_val(Instruction* inst)
-{
-    switch (inst->inst_type)
-    {
-    case 2: {
-        // andi, ori는 제로 확장
-        if (inst->opcode == 0x0C || inst->opcode == 0x0D) {
-            inst->immediate &= 0x0000FFFF;
-        }
-        // 나머지 I-type은 부호 확장
-        else {
-            if (inst->immediate & 0x8000)
-                inst->immediate |= 0xFFFF0000;
-        }
-        break;
-    }
-    default:
-        break;
-    }
+    id_ex_latch.sign_imm = inst.immediate;
+    id_ex_latch.shamt = inst.shamt;
+    id_ex_latch.forward_a = 0;
+    id_ex_latch.forward_b = 0;
+    id_ex_latch.forward_a_val = 0;
+    id_ex_latch.forward_b_val = 0;
 }
 
 void decode_rtype(uint32_t instruction, Instruction* inst) {
@@ -155,13 +157,6 @@ void decode_rtype(uint32_t instruction, Instruction* inst) {
     inst->shamt = (instruction >> 6) & 0x1f;
     inst->funct = instruction & 0x3f;
     inst->inst_type = 0;
-    
-    if (inst->funct == 0x08) {
-        inst->inst_type = 3; // jr
-    }
-    else if (inst->funct == 0x09) {
-        inst->inst_type = 5; // jalr
-    }
 }
 
 void decode_itype(uint32_t instruction, Instruction* inst) {
@@ -169,10 +164,6 @@ void decode_itype(uint32_t instruction, Instruction* inst) {
     inst->rt = (instruction >> 16) & 0x1f;
     inst->immediate = instruction & 0xffff;
     inst->inst_type = 2;
-    
-    if (inst->opcode == 4 || inst->opcode == 5) {
-        inst->inst_type = 4; // branch
-    }
 }
 
 void decode_jtype(uint32_t instruction, Instruction* inst) {

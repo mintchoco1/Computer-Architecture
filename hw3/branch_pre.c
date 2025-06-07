@@ -1,84 +1,102 @@
 #include "structure.h"
 
-// 간단한 2-bit 브랜치 예측기
-#define BP_TABLE_SIZE 256
-#define BP_STRONGLY_NOT_TAKEN 0
-#define BP_WEAKLY_NOT_TAKEN   1
-#define BP_WEAKLY_TAKEN       2
-#define BP_STRONGLY_TAKEN     3
+// 브랜치 예측 테이블 크기 (2^8 = 256 entries)
+#define BRANCH_PREDICTOR_SIZE 256
+#define BRANCH_PREDICTOR_MASK (BRANCH_PREDICTOR_SIZE - 1)
 
-typedef struct {
-    uint8_t predictor[BP_TABLE_SIZE];  // 2-bit predictor for each entry
-    uint32_t btb[BP_TABLE_SIZE];       // Branch Target Buffer
-    bool btb_valid[BP_TABLE_SIZE];     // BTB entry validity
-} BranchPredictor;
+// 2-bit saturating counter states
+typedef enum {
+    STRONGLY_NOT_TAKEN = 0,   // 00
+    WEAKLY_NOT_TAKEN = 1,     // 01
+    WEAKLY_TAKEN = 2,         // 10
+    STRONGLY_TAKEN = 3        // 11
+} BranchState;
 
-static BranchPredictor bp = {0};
+// 브랜치 예측 테이블
+static BranchState branch_predictor_table[BRANCH_PREDICTOR_SIZE];
+static bool predictor_initialized = false;
 
-// PC를 인덱스로 변환
-static uint32_t get_bp_index(uint32_t pc) {
-    return (pc >> 2) & (BP_TABLE_SIZE - 1);
-}
-
-// 브랜치 예측 수행
-BranchPrediction predict_branch(uint32_t pc) {
-    BranchPrediction prediction = {0};
-    uint32_t index = get_bp_index(pc);
-    
-    // 2-bit predictor에 따른 예측
-    prediction.taken = (bp.predictor[index] >= BP_WEAKLY_TAKEN);
-    
-    // BTB에서 타겟 주소 가져오기
-    if (bp.btb_valid[index]) {
-        prediction.target = bp.btb[index];
-    } else {
-        prediction.target = pc + 4;  // 기본값
-    }
-    
-    prediction.confidence = (bp.predictor[index] == BP_STRONGLY_TAKEN || 
-                           bp.predictor[index] == BP_STRONGLY_NOT_TAKEN) ? 2 : 1;
-    
-    return prediction;
-}
-
-// 브랜치 예측 결과 업데이트
-void update_branch_predictor(uint32_t pc, bool actual_taken, uint32_t actual_target) {
-    uint32_t index = get_bp_index(pc);
-    
-    // 2-bit predictor 업데이트
-    if (actual_taken) {
-        if (bp.predictor[index] < BP_STRONGLY_TAKEN) {
-            bp.predictor[index]++;
-        }
-    } else {
-        if (bp.predictor[index] > BP_STRONGLY_NOT_TAKEN) {
-            bp.predictor[index]--;
-        }
-    }
-    
-    // BTB 업데이트 (taken인 경우에만)
-    if (actual_taken) {
-        bp.btb[index] = actual_target;
-        bp.btb_valid[index] = true;
-    }
-}
+// 브랜치 예측 통계
+uint64_t branch_predictions = 0;
+uint64_t branch_correct_predictions = 0;
+uint64_t branch_mispredictions = 0;
 
 // 브랜치 예측기 초기화
 void init_branch_predictor(void) {
-    for (int i = 0; i < BP_TABLE_SIZE; i++) {
-        bp.predictor[i] = BP_WEAKLY_NOT_TAKEN;  // 초기값: weakly not taken
-        bp.btb[i] = 0;
-        bp.btb_valid[i] = false;
+    if (!predictor_initialized) {
+        // 모든 엔트리를 WEAKLY_NOT_TAKEN으로 초기화
+        for (int i = 0; i < BRANCH_PREDICTOR_SIZE; i++) {
+            branch_predictor_table[i] = WEAKLY_NOT_TAKEN;
+        }
+        predictor_initialized = true;
+        
+        branch_predictions = 0;
+        branch_correct_predictions = 0;
+        branch_mispredictions = 0;
     }
 }
 
-// 예측 상태를 문자열로 변환
-const char* get_prediction_state_string(uint8_t state) {
-    switch (state) {
-        case BP_STRONGLY_NOT_TAKEN: return "강하게 Not-Taken";
-        case BP_WEAKLY_NOT_TAKEN:   return "약하게 Not-Taken";
-        case BP_WEAKLY_TAKEN:       return "약하게 Taken";
-        case BP_STRONGLY_TAKEN:     return "강하게 Taken";
-        default: return "Unknown";
+// PC를 인덱스로 변환
+static uint32_t get_predictor_index(uint32_t pc) {
+    // PC의 하위 비트들을 사용 (word aligned이므로 2비트 shift)
+    return (pc >> 2) & BRANCH_PREDICTOR_MASK;
+}
+
+// 브랜치 예측 수행
+bool predict_branch(uint32_t pc) {
+    init_branch_predictor();
+    
+    uint32_t index = get_predictor_index(pc);
+    BranchState state = branch_predictor_table[index];
+    
+    branch_predictions++;
+    
+    // WEAKLY_TAKEN 이상이면 taken으로 예측
+    return (state >= WEAKLY_TAKEN);
+}
+
+// 브랜치 결과로 예측기 업데이트
+void update_branch_predictor(uint32_t pc, bool actual_taken, bool predicted_taken) {
+    uint32_t index = get_predictor_index(pc);
+    BranchState current_state = branch_predictor_table[index];
+    
+    // 예측 정확도 업데이트
+    if (actual_taken == predicted_taken) {
+        branch_correct_predictions++;
+    } else {
+        branch_mispredictions++;
     }
+    
+    // 2-bit saturating counter 업데이트
+    if (actual_taken) {
+        // 브랜치가 taken됨 - counter 증가 (최대 3)
+        if (current_state < STRONGLY_TAKEN) {
+            branch_predictor_table[index] = current_state + 1;
+        }
+    } else {
+        // 브랜치가 not taken됨 - counter 감소 (최소 0)
+        if (current_state > STRONGLY_NOT_TAKEN) {
+            branch_predictor_table[index] = current_state - 1;
+        }
+    }
+}
+
+// 브랜치 예측 통계 출력
+void print_branch_prediction_stats(void) {
+    if (branch_predictions > 0) {
+        double accuracy = (double)branch_correct_predictions / branch_predictions * 100.0;
+        printf("Branch Prediction Statistics:\n");
+        printf("  Total predictions: %llu\n", (unsigned long long)branch_predictions);
+        printf("  Correct predictions: %llu\n", (unsigned long long)branch_correct_predictions);
+        printf("  Mispredictions: %llu\n", (unsigned long long)branch_mispredictions);
+        printf("  Prediction accuracy: %.2f%%\n", accuracy);
+    }
+}
+
+// 브랜치 예측기 리셋
+void reset_branch_predictor(void) {
+    init_branch_predictor();
+    branch_predictions = 0;
+    branch_correct_predictions = 0;
+    branch_mispredictions = 0;
 }

@@ -1,120 +1,194 @@
 #include "structure.h"
 
 void initialize_control(Control_Signals* control) {
-    control->regdst = 0;
-    control->regwrite = 0;
-    control->alusrc = 0;
-    control->memtoreg = 0;
-    control->memwrite = 0;
-    control->memread = 0;
-    control->branch = 0;
-    control->jump = 0;
-    control->aluop = 0;
-    control->rs_ch = 0;  // rs를 사용하는지 여부
-    control->rt_ch = 0;  // rt를 사용하는지 여부
-    control->ex_skip = 0;  // 실행 단계를 건너뛸지 여부
+    control->alu_ctrl = 0;
+    control->alu_op = 0;
+    control->alu_src = 0;
+    control->mem_read = 0;
+    control->mem_write = 0;
+    control->mem_to_reg = 0;
+    control->reg_wb = 0;
+    control->reg_dst = 0;
+    control->get_imm = 0;
+    control->ex_skip = 0;
+    control->rs_ch = 0;
+    control->rt_ch = 0;
 }
 
+// 참고 코드와 동일한 제어 신호 설정
 void setup_control_signals(Instruction* inst, Control_Signals* control) {
     initialize_control(control);
 
     switch (inst->opcode) {
-        case 0: // R-type
-            control->regdst = 1;
-            control->regwrite = 1;
-            control->aluop = 2;
-            control->rs_ch = 1;  // rs 사용
-            control->rt_ch = 1;  // rt 사용
-            
-            if (inst->funct == 0x08) {  // jr
-                control->jump = 1;
-                control->regwrite = 0;
-                control->ex_skip = 1;
-                control->rt_ch = 0;  // jr은 rt 사용 안함
-            }
-            else if (inst->funct == 0x09) { // jalr
-                control->jump = 1;
-                control->regwrite = 1;
-                control->ex_skip = 1;
-                control->rt_ch = 0;  // jalr은 rt 사용 안함
-            }
-            else if (inst->funct == 0x00 || inst->funct == 0x02) { // sll, srl
-                control->rs_ch = 0;  // shift 명령어는 rs 사용 안함
-            }
-            break;
-            
-        case 2: // j
-            control->jump = 1;
-            control->regwrite = 0;
+        case 0x2:  // j
             control->ex_skip = 1;
             break;
-            
-        case 3: // jal
-            control->jump = 1;
-            control->regwrite = 1;
+        case 0x3:  // jal
             control->ex_skip = 1;
             break;
-            
-        case 4: // beq
-        case 5: // bne
-            control->branch = 1;
-            control->aluop = 1;
-            control->regwrite = 0;
+        case 0x4:  // beq
             control->ex_skip = 1;
-            control->rs_ch = 1;  // 비교를 위해 rs 사용
-            control->rt_ch = 1;  // 비교를 위해 rt 사용
+            control->rt_ch = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 8: // addi
-        case 9: // addiu
-            control->alusrc = 1;
-            control->regwrite = 1;
-            control->rs_ch = 1;  // rs 사용
+        case 0x5:  // bne
+            control->ex_skip = 1;
+            control->rt_ch = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 10: // slti
-        case 11: // sltiu
-            control->alusrc = 1;
-            control->regwrite = 1;
-            control->aluop = 3;
-            control->rs_ch = 1;  // rs 사용
+        case 0x8:  // addi
+            control->reg_wb = 1;
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0010;
+            control->alu_src = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 12: // andi
-            control->alusrc = 1;
-            control->regwrite = 1;
-            control->aluop = 4;
-            control->rs_ch = 1;  // rs 사용
+        case 0x9:  // addiu
+            control->reg_wb = 1;
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0010;
+            control->alu_src = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 13: // ori
-            control->alusrc = 1;
-            control->regwrite = 1;
-            control->aluop = 5;
-            control->rs_ch = 1;  // rs 사용
+        case 0xA:  // slti
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0111;
+            control->alu_src = 1;
+            control->reg_wb = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 15: // lui
-            control->alusrc = 1;
-            control->regwrite = 1;
-            control->aluop = 6;
-            // lui는 rs 사용하지 않음
+        case 0xB:  // sltiu
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0111;
+            control->alu_src = 1;
+            control->reg_wb = 1;
+            control->rs_ch = 1;
             break;
-            
-        case 35: // lw
-            control->alusrc = 1;
-            control->memtoreg = 1;
-            control->regwrite = 1;
-            control->memread = 1;
-            control->rs_ch = 1;  // 주소 계산을 위해 rs 사용
+        case 0xC:  // andi
+            control->alu_ctrl = 0b0000;
+            control->alu_src = 1;
+            control->reg_wb = 1;
+            control->get_imm = 2;
+            control->rs_ch = 1;
             break;
-            
-        case 43: // sw
-            control->alusrc = 1;
-            control->memwrite = 1;
-            control->regwrite = 0;
-            control->rs_ch = 1;  // 주소 계산을 위해 rs 사용
-            control->rt_ch = 1;  // 저장할 데이터를 위해 rt 사용
+        case 0xD:  // ori
+            control->alu_ctrl = 0b0001;
+            control->alu_src = 1;
+            control->reg_wb = 1;
+            control->get_imm = 2;
+            control->rs_ch = 1;
+            break;
+        case 0x23:  // lw
+            control->reg_wb = 1;
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0010;
+            control->alu_src = 1;
+            control->mem_read = 1;
+            control->mem_to_reg = 1;
+            control->rs_ch = 1;
+            break;
+        case 0x2B:  // sw
+            control->get_imm = 1;
+            control->alu_ctrl = 0b0010;
+            control->alu_src = 1;
+            control->mem_write = 1;
+            control->rt_ch = 1;
+            control->rs_ch = 1;
+            break;
+        case 0xF:  // lui
+            control->get_imm = 3;
+            control->reg_dst = 0;
+            control->alu_src = 0;
+            control->ex_skip = 0;
+            control->reg_wb = 1;
+            break;
+        case 0x0:  // R-type
+            switch (inst->funct) {
+                case 0x20:  // Add
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0010;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x21:  // Addu
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0010;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x22:  // Subtract
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0110;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x23:  // Subu
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0110;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x24:  // And
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0000;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x25:  // Or
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0001;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x27:  // Nor
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b1100;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x00:  // SLL
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b1110;
+                    control->rt_ch = 1;
+                    break;
+                case 0x02:  // SRL
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b1111;
+                    control->rt_ch = 1;
+                    break;
+                case 0x2A:  // SLT
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0111;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x2B:  // SLTU
+                    control->reg_wb = 1;
+                    control->reg_dst = 1;
+                    control->alu_ctrl = 0b0111;
+                    control->rt_ch = 1;
+                    control->rs_ch = 1;
+                    break;
+                case 0x08:  // JR
+                    control->ex_skip = 1;
+                    control->reg_dst = 1;
+                    control->rs_ch = 1;
+                    break;
+                default:
+                    break;
+            }
+            break;
+        default:
             break;
     }
 }

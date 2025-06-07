@@ -1174,8 +1174,7 @@ void datapath(Registers* r, uint8_t* mem) {
 
         ////printf( "hazard count : %d\n[data path]\n",hazard_cnt);
         
-       
-
+    
         // Write Back stage
 
         if (ctrl_flow[3] == 1) {
@@ -1194,11 +1193,6 @@ void datapath(Registers* r, uint8_t* mem) {
             // 1. 아무 작업도 하지 않음
         }
 
-
-
-        
-
-
         // Memory Access stage
         if (ctrl_flow[2] == 1) {
             // 1. Memory Access 단계 실행
@@ -1216,7 +1210,6 @@ void datapath(Registers* r, uint8_t* mem) {
             //printf( "nothing\n");
         }
 
-
         if (lw_ex_hazardA == 1) {
             idEx->forward_a_val = memWb->mem_read;
 
@@ -1225,9 +1218,6 @@ void datapath(Registers* r, uint8_t* mem) {
             idEx->forward_b_val = memWb->mem_read;
         }
 
-
-
-        
         if (ifId->forward_a == 0b01) {
             ifId->forward_a_val = (bj_lw_hazard == 1) ? memWb->mem_read : memWb->alu_res;
         }
@@ -1236,10 +1226,6 @@ void datapath(Registers* r, uint8_t* mem) {
         if (ifId->forward_b == 0b01) {
             ifId->forward_b_val = (bj_lw_hazard == 1) ? memWb->mem_read : memWb->alu_res;
         }
-
-
-
-
 
         // Execute stage
         if (ctrl_flow[1] == 1) {
@@ -1259,8 +1245,6 @@ void datapath(Registers* r, uint8_t* mem) {
             //printf( "nothing\n");
         }
 
-
-
         // branch ex hazard
         if (ifId->forward_a == 0b10) {
             ifId->forward_a_val = exMem->alu_res;
@@ -1269,8 +1253,6 @@ void datapath(Registers* r, uint8_t* mem) {
         if (ifId->forward_b == 0b10) {
             ifId->forward_b_val = exMem->alu_res;
         }
-
-
 
         // Decode stage
         if (ctrl_flow[0] == 1) {
@@ -1288,9 +1270,7 @@ void datapath(Registers* r, uint8_t* mem) {
             // 1. 아무 작업도 하지 않음
             //printf( "nothing\n");
         }
-        
-
-
+    
         // Fetch stage (always execute)
         // 1. Fetch 단계 실행
         // 2. Branch Prediction 수행
@@ -1327,7 +1307,6 @@ void datapath(Registers* r, uint8_t* mem) {
 
     } while (exit_proc <= 5);
 
-
     printf( "================================================================================\n");
     printf( "Return register (r2)                 : %d\n", r->reg[2]);
     printf( "Total clock cycle                    : %d\n", inst_count);
@@ -1340,8 +1319,6 @@ void datapath(Registers* r, uint8_t* mem) {
     printf( "register write count                 : %d\n", write_reg_count);
     printf( "=================================================================================\n");
 
-
-
     // 메모리 해제
     free(ifId);
     free(idEx->ctrl); // 할당된 Control 구조체 메모리 해제
@@ -1350,9 +1327,6 @@ void datapath(Registers* r, uint8_t* mem) {
     free(exMem);
     free(memWb->ctrl); // 할당된 Control 구조체 메모리 해제
     free(memWb);
-
-    
-
     return;
 }
 
@@ -1408,12 +1382,6 @@ void init_reg(Registers* r) {
     r->reg[31] = 0xffffffff;
     r->reg[29] = 0x1000000;
 }
-
-
-
-
-
-
 int main(void) {
 
     //fp = fopen("data.txt", "w");

@@ -1,9 +1,12 @@
+#ifndef STRUCTURE_H
+#define STRUCTURE_H
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 
-#define MEMORY_SIZE 0x10000000
+#define MEMORY_SIZE 0x1000000
 
 extern uint8_t memory[MEMORY_SIZE];
 
@@ -13,18 +16,18 @@ typedef struct {
 } Registers;
 
 typedef struct {
-    int regdst;
-    int regwrite;
-    int alusrc;
-    int memtoreg;
-    int memwrite;
-    int memread;
-    int branch;
-    int jump;
-    int aluop;
-    int rs_ch;      // rs를 사용하는지 여부
-    int rt_ch;      // rt를 사용하는지 여부
-    int ex_skip;    // 실행 단계를 건너뛸지 여부
+    int alu_ctrl;
+    int alu_op;
+    int alu_src;
+    int mem_read;
+    int mem_write;
+    int mem_to_reg;
+    int reg_wb;
+    int reg_dst;
+    int get_imm;
+    int ex_skip;
+    int rt_ch;
+    int rs_ch;
 } Control_Signals;
 
 typedef struct {
@@ -45,7 +48,16 @@ typedef struct {
 typedef struct {
     uint32_t instruction;
     uint32_t pc;
+    uint32_t next_pc;  // 추가
     bool valid;
+    uint32_t reg_src;
+    uint32_t reg_tar;
+    uint32_t opcode;
+    uint32_t funct;
+    int forward_a;
+    int forward_b;
+    uint32_t forward_a_val;
+    uint32_t forward_b_val;
 } IF_ID_Latch;
 
 typedef struct {
@@ -56,6 +68,12 @@ typedef struct {
     uint32_t rs_value;
     uint32_t rt_value;
     uint32_t write_reg;
+    uint32_t sign_imm;
+    uint32_t shamt;
+    int forward_a;
+    int forward_b;
+    uint32_t forward_a_val;
+    uint32_t forward_b_val;
 } ID_EX_Latch;
 
 typedef struct {
@@ -79,8 +97,8 @@ typedef struct {
 } MEM_WB_Latch;
 
 typedef struct {
-    int forward_a;  // 0=no, 1=from_mem_wb, 2=from_ex_mem
-    int forward_b;  // 0=no, 1=from_mem_wb, 2=from_ex_mem
+    int forward_a;
+    int forward_b;
 } ForwardingUnit;
 
 typedef struct {
@@ -116,6 +134,7 @@ extern uint32_t alu_operate(uint32_t, uint32_t, int, Instruction*);
 
 // 해저드 및 포워딩
 extern ForwardingUnit detect_forwarding(void);
+extern ForwardingUnit detect_branch_forwarding(void);
 extern HazardUnit detect_hazard(void);
 extern uint32_t get_forwarded_value(int forward_type, uint32_t original_value);
 extern void handle_stall(void);
@@ -123,3 +142,11 @@ extern void handle_branch_flush(void);
 
 // 유틸리티
 extern const char* get_instruction_name(uint32_t opcode, uint32_t funct);
+
+// extend_imm_val 함수 선언 추가
+extern void extend_imm_val(Instruction*);
+
+// 전역 변수 선언 추가
+extern uint64_t g_inst_count;
+
+#endif

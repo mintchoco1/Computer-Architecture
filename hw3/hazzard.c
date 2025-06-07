@@ -1,6 +1,6 @@
 #include "structure.h"
 
-extern uint64_t g_stall_count;
+static uint64_t stall_count = 0;
 
 ForwardingUnit detect_forwarding(void) {
     ForwardingUnit unit = {0, 0};
@@ -8,58 +8,114 @@ ForwardingUnit detect_forwarding(void) {
     if (!id_ex_latch.valid) {
         return unit;
     }
+
+    if (id_ex_latch.control_signals.rs_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
+        if (ex_mem_latch.control_signals.reg_wb == 1 && ex_mem_latch.write_reg != 0 && 
+            id_ex_latch.instruction.rs == ex_mem_latch.write_reg) {
+            id_ex_latch.forward_a = 0b10;
+            if (ex_mem_latch.control_signals.mem_read != 1) {
+                id_ex_latch.forward_a_val = ex_mem_latch.alu_result;
+            }
+        }
+
+        else if (mem_wb_latch.control_signals.reg_wb == 1 && mem_wb_latch.write_reg != 0 &&
+                 id_ex_latch.instruction.rs == mem_wb_latch.write_reg) {
+            id_ex_latch.forward_a = 0b01;
+            id_ex_latch.forward_a_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                         mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+        }
+    }
+
+    if (id_ex_latch.control_signals.rt_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
+        if (ex_mem_latch.control_signals.reg_wb == 1 && ex_mem_latch.write_reg != 0 && 
+            id_ex_latch.instruction.rt == ex_mem_latch.write_reg) {
+            id_ex_latch.forward_b = 0b10;
+            if (ex_mem_latch.control_signals.mem_read != 1) {
+                id_ex_latch.forward_b_val = ex_mem_latch.alu_result;
+            }
+        }
+
+        else if (mem_wb_latch.control_signals.reg_wb == 1 && mem_wb_latch.write_reg != 0 &&
+                 id_ex_latch.instruction.rt == mem_wb_latch.write_reg) {
+            id_ex_latch.forward_b = 0b01;
+            id_ex_latch.forward_b_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                         mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+        }
+    }
+
+    return unit;
+}
+
+ForwardingUnit detect_branch_forwarding(void) {
+    ForwardingUnit unit = {0, 0};
     
-    uint32_t rs = id_ex_latch.instruction.rs;
-    uint32_t rt = id_ex_latch.instruction.rt;
+    if (!if_id_latch.valid) {
+        return unit;
+    }
+
+    uint32_t opcode = if_id_latch.opcode;
+    uint32_t funct = if_id_latch.funct;
     
-    // EX/MEM 단계에서 포워딩 (EX hazard)
-    if (ex_mem_latch.valid && ex_mem_latch.control_signals.regwrite && 
+    if (!((opcode == 0x4 || opcode == 0x5) || (opcode == 0x0 && funct == 0x08))) {
+        return unit;
+    }
+
+    if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb && 
         ex_mem_latch.write_reg != 0) {
         
-        if (ex_mem_latch.write_reg == rs && id_ex_latch.control_signals.rs_ch) {
-            unit.forward_a = 2;  // EX/MEM에서 포워딩
+        if (ex_mem_latch.write_reg == if_id_latch.reg_src) {
+            if_id_latch.forward_a = 0b01;
+            if (ex_mem_latch.control_signals.mem_read == 1) {
+                // LW의 경우 다음 단계에서 값 업데이트
+            } else {
+                if_id_latch.forward_a_val = ex_mem_latch.alu_result;
+            }
         }
         
-        if (ex_mem_latch.write_reg == rt && id_ex_latch.control_signals.rt_ch) {
-            unit.forward_b = 2;  // EX/MEM에서 포워딩
+        if ((opcode == 0x4 || opcode == 0x5) && ex_mem_latch.write_reg == if_id_latch.reg_tar) {
+            if_id_latch.forward_b = 0b01;
+            if (ex_mem_latch.control_signals.mem_read == 1) {
+                // LW의 경우 다음 단계에서 값 업데이트
+            } else {
+                if_id_latch.forward_b_val = ex_mem_latch.alu_result;
+            }
         }
     }
-    
-    // MEM/WB 단계에서 포워딩 (MEM hazard)
-    if (mem_wb_latch.valid && mem_wb_latch.control_signals.regwrite && 
-        mem_wb_latch.write_reg != 0) {
+
+    // ID/EX 단계에서 포워딩
+    if (id_ex_latch.valid && id_ex_latch.control_signals.reg_wb && 
+        id_ex_latch.write_reg != 0) {
         
-        if (unit.forward_a == 0 && mem_wb_latch.write_reg == rs && 
-            id_ex_latch.control_signals.rs_ch) {
-            unit.forward_a = 1;  // MEM/WB에서 포워딩
+        if (id_ex_latch.write_reg == if_id_latch.reg_src) {
+            if_id_latch.forward_a = 0b10;
         }
         
-        if (unit.forward_b == 0 && mem_wb_latch.write_reg == rt && 
-            id_ex_latch.control_signals.rt_ch) {
-            unit.forward_b = 1;  // MEM/WB에서 포워딩
+        if ((opcode == 0x4 || opcode == 0x5) && id_ex_latch.write_reg == if_id_latch.reg_tar) {
+            if_id_latch.forward_b = 0b10;
         }
     }
-    
+
     return unit;
 }
 
 HazardUnit detect_hazard(void) {
     HazardUnit unit = {false, false};
     
-    // 로드-사용 해저드만 간단히 체크
-    if (!id_ex_latch.valid || !id_ex_latch.control_signals.memread) {
+    // Load 명령어가 ID/EX에 없으면 해저드 없음
+    if (!id_ex_latch.valid || !id_ex_latch.control_signals.mem_read) {
         return unit;
     }
     
+    // 다음 명령어가 없으면 해저드 없음
     if (!if_id_latch.valid) {
         return unit;
     }
     
     uint32_t lw_dest = id_ex_latch.write_reg;
-    uint32_t next_instruction = if_id_latch.instruction;
-    uint32_t next_opcode = next_instruction >> 26;
-    uint32_t next_rs = (next_instruction >> 21) & 0x1f;
-    uint32_t next_rt = (next_instruction >> 16) & 0x1f;
+    uint32_t next_rs = if_id_latch.reg_src;
+    uint32_t next_rt = if_id_latch.reg_tar;
+    uint32_t next_opcode = if_id_latch.opcode;
+    uint32_t next_funct = if_id_latch.funct;
     
     if (lw_dest == 0) {
         return unit;
@@ -67,27 +123,27 @@ HazardUnit detect_hazard(void) {
     
     bool load_use_hazard = false;
     
-    // R-type
+    // R-type 명령어
     if (next_opcode == 0) {
-        if (next_rs == lw_dest || next_rt == lw_dest) {
+        if ((lw_dest == next_rs) || (lw_dest == next_rt)) {
             load_use_hazard = true;
         }
-    }
-    // I-type들
-    else if (next_opcode == 8 || next_opcode == 9 ||   // addi, addiu
-             next_opcode == 10 || next_opcode == 11 ||  // slti, sltiu
-             next_opcode == 12 || next_opcode == 13 ||  // andi, ori
-             next_opcode == 35 || next_opcode == 43) {  // lw, sw
-        if (next_rs == lw_dest) {
+    } 
+    // 브랜치 명령어
+    else if (next_opcode == 0x4 || next_opcode == 0x5) {
+        if ((lw_dest == next_rs) || (lw_dest == next_rt)) {
             load_use_hazard = true;
         }
-        if (next_opcode == 43 && next_rt == lw_dest) { // sw
+    } 
+    // JR 명령어
+    else if (next_opcode == 0x0 && next_funct == 0x08) {
+        if (lw_dest == next_rs) {
             load_use_hazard = true;
         }
-    }
-    // 브랜치
-    else if (next_opcode == 4 || next_opcode == 5) {  // beq, bne
-        if (next_rs == lw_dest || next_rt == lw_dest) {
+    } 
+    // I-type 명령어 (rs만 사용)
+    else {
+        if (lw_dest == next_rs) {
             load_use_hazard = true;
         }
     }
@@ -95,7 +151,7 @@ HazardUnit detect_hazard(void) {
     if (load_use_hazard) {
         unit.stall = true;
         printf("로드-사용 해저드! 스톨 (LW dest: R%d)\n", lw_dest);
-        g_stall_count++;
+        stall_count++;  // 로컬 변수 사용
     }
     
     return unit;
@@ -104,13 +160,19 @@ HazardUnit detect_hazard(void) {
 uint32_t get_forwarded_value(int forward_type, uint32_t original_value) {
     switch (forward_type) {
         case 1: // MEM/WB에서 포워딩
-            if (mem_wb_latch.control_signals.memtoreg) {
+            if (!mem_wb_latch.valid) {
+                return original_value;
+            }
+            if (mem_wb_latch.control_signals.mem_read == 1) {
                 return mem_wb_latch.rt_value;
             } else {
                 return mem_wb_latch.alu_result;
             }
             
         case 2: // EX/MEM에서 포워딩
+            if (!ex_mem_latch.valid) {
+                return original_value;
+            }
             return ex_mem_latch.alu_result;
             
         default:
@@ -119,15 +181,14 @@ uint32_t get_forwarded_value(int forward_type, uint32_t original_value) {
 }
 
 void handle_stall(void) {
-    // PC 되돌리고 NOP 삽입
+    // 참고 코드와 동일하게 PC만 되돌리기
     registers.pc -= 4;
-    id_ex_latch.valid = false;
     printf("스톨: PC=0x%08x\n", registers.pc);
 }
 
 void handle_branch_flush(void) {
-    // 잘못 페치한 명령어들 무효화
+    // 브랜치 미스예측 시 파이프라인 플러시
     if_id_latch.valid = false;
     id_ex_latch.valid = false;
-    printf("파이프라인 플러시\n");
+    printf("파이프라인 플러시 (브랜치/점프)\n");
 }

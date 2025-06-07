@@ -8,38 +8,37 @@ ID_EX_Latch id_ex_latch = {0};
 EX_MEM_Latch ex_mem_latch = {0};
 MEM_WB_Latch mem_wb_latch = {0};
 
-uint64_t g_num_wb_commit = 0;
-uint64_t g_cycle_count = 0;
-uint64_t g_r_type_count = 0;
-uint64_t g_i_type_count = 0;
-uint64_t g_j_type_count = 0;
-uint64_t g_branch_jr_count = 0;
-uint64_t g_lw_count = 0;
-uint64_t g_sw_count = 0;
-uint64_t g_nop_count = 0;
-uint64_t g_write_reg_count = 0;
-uint64_t g_branch_count = 0;
-uint64_t g_branch_taken = 0;
-uint64_t g_stall_count = 0;
 
-void clear_latches(void)
-{
+uint64_t inst_count = 0;        
+uint64_t r_count = 0;
+uint64_t i_count = 0; 
+uint64_t branch_jr_count = 0;
+uint64_t lw_count = 0;
+uint64_t sw_count = 0;
+uint64_t nop_count = 0;
+uint64_t write_reg_count = 0;
+uint64_t g_stall_count = 0;  
+uint64_t branch_predictions = 0;
+uint64_t branch_correct_predictions = 0;
+uint64_t branch_mispredictions = 0;
+
+void clear_latches(void) {
     memset(&if_id_latch, 0, sizeof(if_id_latch));
     memset(&id_ex_latch, 0, sizeof(id_ex_latch));
     memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
     memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
 }
 
-void init_registers(uint32_t entry_pc)
-{
+void init_registers(uint32_t entry_pc) {
     memset(registers.regs, 0, sizeof(registers.regs));
     registers.pc = entry_pc;
-    registers.regs[31] = 0xFFFFFFFF;  // 종료 조건
-    registers.regs[29] = 0x1000000;   // 스택 포인터
+    registers.regs[31] = 0xFFFFFFFF;
+    registers.regs[29] = 0x1000000;
+
+    init_branch_predictor();
 }
 
-int load_program(const char *filename, uint32_t load_addr)
-{
+int load_program(const char *filename, uint32_t load_addr) {
     FILE *fp = fopen(filename, "rb");
     if (!fp) {
         perror("fopen");
@@ -57,7 +56,6 @@ int load_program(const char *filename, uint32_t load_addr)
             return -1;
         }
         
-        // 빅 엔디안으로 저장
         memory[memoryIndex++] = (temp >> 24) & 0xFF;
         memory[memoryIndex++] = (temp >> 16) & 0xFF;
         memory[memoryIndex++] = (temp >> 8) & 0xFF;
@@ -69,141 +67,234 @@ int load_program(const char *filename, uint32_t load_addr)
     return 0;
 }
 
-void dump_registers(void)
-{
-    printf("\n==== Register File ====");
-    for (int i = 0; i < 32; i++) {
-        if (i % 4 == 0) printf("\nR%02d:", i);
-        printf(" %08x", registers.regs[i]);
+bool step_pipeline(void) {
+    static int exit_proc = 0;
+    static int ctrl_flow[4] = {-1, -1, -1, -1};  
+    
+    // 해저드 검출을 위한 변수들
+    int hazard_cnt = 0;
+    int lw_ex_hazardA = 0;
+    int lw_ex_hazardB = 0;
+    int bj_lw_hazard = 0;
+    
+    // inst_count 증가 
+    inst_count++;
+    
+    // IF 단계에서 NOP 처리
+    if (if_id_latch.valid && if_id_latch.instruction == 0) {
+        ctrl_flow[0] = 0;
+        nop_count++;
     }
-    printf("\nPC : %08x\n", registers.pc);
-}
-
-const char* get_instruction_name(uint32_t opcode, uint32_t funct) {
-    switch (opcode) {
-        case 0: // R-type
-            switch (funct) {
-                case 0x20: return "add";
-                case 0x21: return "addu";
-                case 0x22: return "sub";
-                case 0x23: return "subu";
-                case 0x24: return "and";
-                case 0x25: return "or";
-                case 0x27: return "nor";
-                case 0x2a: return "slt";
-                case 0x2b: return "sltu";
-                case 0x00: return "sll";
-                case 0x02: return "srl";
-                case 0x08: return "jr";
-                case 0x09: return "jalr";
-                default: return "unknown_r";
+    
+    // 1. EX 단계 포워딩 검출
+    if (id_ex_latch.valid && id_ex_latch.control_signals.rs_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
+        int temp1 = 0;
+        
+        if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && 
+            ex_mem_latch.write_reg != 0 && id_ex_latch.instruction.rs == ex_mem_latch.write_reg) {
+            id_ex_latch.forward_a = 0b10;
+            hazard_cnt++;
+            if (ex_mem_latch.control_signals.mem_read != 1) {
+                id_ex_latch.forward_a_val = ex_mem_latch.alu_result;
+            } else {
+                lw_ex_hazardA = 1;
             }
-        case 2: return "j";
-        case 3: return "jal";
-        case 4: return "beq";
-        case 5: return "bne";
-        case 8: return "addi";
-        case 9: return "addiu";
-        case 10: return "slti";
-        case 11: return "sltiu";
-        case 12: return "andi";
-        case 13: return "ori";
-        case 15: return "lui";
-        case 35: return "lw";
-        case 43: return "sw";
-        default: return "unknown";
+            temp1 = 1;
+        }
+        
+        if ((temp1 == 0) && mem_wb_latch.valid && mem_wb_latch.control_signals.reg_wb == 1 && 
+            id_ex_latch.instruction.rs == mem_wb_latch.write_reg) {
+            id_ex_latch.forward_a = 0b01;
+            hazard_cnt++;
+            id_ex_latch.forward_a_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                        mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+        }
     }
-}
-
-void print_pipeline_state(void) {
-    printf("Pipeline: ");
     
-    // IF
-    printf("IF[");
+    if (id_ex_latch.valid && id_ex_latch.control_signals.rt_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
+        int temp2 = 0;
+        
+        if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && 
+            ex_mem_latch.write_reg != 0 && id_ex_latch.instruction.rt == ex_mem_latch.write_reg) {
+            id_ex_latch.forward_b = 0b10;
+            hazard_cnt++;
+            if (ex_mem_latch.control_signals.mem_read != 1) {
+                id_ex_latch.forward_b_val = ex_mem_latch.alu_result;
+            } else {
+                lw_ex_hazardB = 1;
+            }
+            temp2 = 1;
+        }
+        
+        if ((temp2 == 0) && mem_wb_latch.valid && mem_wb_latch.control_signals.reg_wb == 1 && 
+            id_ex_latch.instruction.rt == mem_wb_latch.write_reg) {
+            id_ex_latch.forward_b = 0b01;
+            id_ex_latch.forward_b_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                        mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+            hazard_cnt++;
+        }
+    }
+    
+    // 2. 브랜치/JR 포워딩 검출 
     if (if_id_latch.valid) {
-        printf("0x%x", if_id_latch.pc);
-    } else {
-        printf("NOP");
+        uint32_t opcode = if_id_latch.opcode;
+        uint32_t funct = if_id_latch.funct;
+        
+        if ((opcode == 0x4 || opcode == 0x5) || (opcode == 0x0 && funct == 0x08)) {
+            
+            // MA 단계 포워딩
+            if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && ex_mem_latch.write_reg != 0) {
+                if (ex_mem_latch.write_reg == if_id_latch.reg_src) {
+                    if_id_latch.forward_a = 0b01;
+                    hazard_cnt++;
+                }
+                
+                if ((ex_mem_latch.write_reg == if_id_latch.reg_tar) && (opcode == 0x4 || opcode == 0x5)) {
+                    if_id_latch.forward_b = 0b01;
+                    hazard_cnt++;
+                }
+                
+                if (ex_mem_latch.control_signals.mem_read == 1) {
+                    bj_lw_hazard = 1;
+                    hazard_cnt++;
+                }
+            }
+            
+            // EX 단계 포워딩
+            if (id_ex_latch.valid && id_ex_latch.control_signals.reg_wb == 1 && id_ex_latch.write_reg != 0) {
+                if (id_ex_latch.write_reg == if_id_latch.reg_src) {
+                    if_id_latch.forward_a = 0b10;
+                    hazard_cnt++;
+                }
+                
+                if ((id_ex_latch.write_reg == if_id_latch.reg_tar) && (opcode == 0x4 || opcode == 0x5)) {
+                    if_id_latch.forward_b = 0b10;
+                    hazard_cnt++;
+                }
+            }
+        }
     }
-    printf("] ");
     
-    // ID
-    printf("ID[");
-    if (id_ex_latch.valid) {
-        printf("%s", get_instruction_name(id_ex_latch.instruction.opcode, id_ex_latch.instruction.funct));
-    } else {
-        printf("NOP");
+    // 1. WB 단계
+    if (ctrl_flow[3] == 1) {
+        if (mem_wb_latch.valid) {
+            stage_WB();
+        }
+    } else if (ctrl_flow[3] == 0) {
+        // NOP은 출력하지 않음 
     }
-    printf("] ");
     
-    // EX
-    printf("EX[");
-    if (ex_mem_latch.valid) {
-        printf("%s", get_instruction_name(ex_mem_latch.instruction.opcode, ex_mem_latch.instruction.funct));
-    } else {
-        printf("NOP");
+    // 2. MEM 단계  
+    if (ctrl_flow[2] == 1) {
+        if (ex_mem_latch.valid) {
+            stage_MEM();
+        }
+    } else if (ctrl_flow[2] == 0) {
+        // NOP 처리
+        mem_wb_latch.valid = false;
+        // 참고 코드에서는 init_memwb 호출
+        memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
     }
-    printf("] ");
     
-    // MEM
-    printf("MEM[");
-    if (mem_wb_latch.valid) {
-        printf("%s", get_instruction_name(mem_wb_latch.instruction.opcode, mem_wb_latch.instruction.funct));
-    } else {
-        printf("NOP");
+    // 3. LW-EX hazard 값 업데이트
+    if (lw_ex_hazardA == 1 && mem_wb_latch.valid) {
+        id_ex_latch.forward_a_val = mem_wb_latch.rt_value;
     }
-    printf("]\n");
+    if (lw_ex_hazardB == 1 && mem_wb_latch.valid) {
+        id_ex_latch.forward_b_val = mem_wb_latch.rt_value;
+    }
+    
+    // 4. 브랜치 포워딩 값 업데이트 (MA)
+    if (if_id_latch.forward_a == 0b01 && mem_wb_latch.valid) {
+        if_id_latch.forward_a_val = (bj_lw_hazard == 1) ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+    }
+    if (if_id_latch.forward_b == 0b01 && mem_wb_latch.valid) {
+        if_id_latch.forward_b_val = (bj_lw_hazard == 1) ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+    }
+    
+    // 5. EX 단계
+    if (ctrl_flow[1] == 1) {
+        if (id_ex_latch.valid) {
+            stage_EX();
+        }
+    } else if (ctrl_flow[1] == 0) {
+        // NOP 처리
+        ex_mem_latch.valid = false;
+        memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
+    }
+    
+    // 6. 브랜치 포워딩 값 업데이트 (EX)
+    if (if_id_latch.forward_a == 0b10 && ex_mem_latch.valid) {
+        if_id_latch.forward_a_val = ex_mem_latch.alu_result;
+    }
+    if (if_id_latch.forward_b == 0b10 && ex_mem_latch.valid) {
+        if_id_latch.forward_b_val = ex_mem_latch.alu_result;
+    }
+    
+    // 7. ID 단계
+    if (ctrl_flow[0] == 1) {
+        if (if_id_latch.valid) {
+            stage_ID();
+        }
+    } else if (ctrl_flow[0] == 0) {
+        // NOP 처리
+        id_ex_latch.valid = false;
+        memset(&id_ex_latch, 0, sizeof(id_ex_latch));
+    }
+    
+    // 8. IF 단계 (항상 실행)
+    if (registers.pc != 0xffffffff) {
+        stage_IF();
+    }
+    
+    // 9. PC 업데이트 및 ctrl_flow 시프트 
+    if (registers.pc != 0xffffffff) {
+        registers.pc = registers.pc + 4;
+        
+        // ctrl_flow 시프트
+        for (int i = 3; i > 0; i--) {
+            ctrl_flow[i] = ctrl_flow[i-1];
+        }
+        
+        ctrl_flow[0] = 1;  // stall_cnt 고려하지 않음 
+    } else if (registers.pc == 0xffffffff) {
+        exit_proc++;
+        for (int i = 3; i > 0; i--) {
+            ctrl_flow[i] = ctrl_flow[i-1];
+        }
+        if (exit_proc >= 3) {
+            ctrl_flow[0] = -1;
+        }
+    }
+    
+    return !(exit_proc > 5);
 }
 
-void print_statistics(void)
-{
-    printf("\n================================================================================\n");
-    printf("Return register (r2)                 : %d\n", registers.regs[2]);
-    printf("Total clock cycle                    : %llu\n", (unsigned long long)g_cycle_count);
-    printf("R-type count                         : %llu\n", (unsigned long long)g_r_type_count);
-    printf("I-type count                         : %llu\n", (unsigned long long)g_i_type_count);
-    printf("Branch, j-type count, jr             : %llu\n", (unsigned long long)g_branch_jr_count);
-    printf("LW count                             : %llu\n", (unsigned long long)g_lw_count);
-    printf("SW count                             : %llu\n", (unsigned long long)g_sw_count);
-    printf("NOP count                            : %llu\n", (unsigned long long)g_nop_count);
-    printf("Register write count                 : %llu\n", (unsigned long long)g_write_reg_count);
-    printf("Stall count                          : %llu\n", (unsigned long long)g_stall_count);
-    printf("Branch count                         : %llu\n", (unsigned long long)g_branch_count);
-    printf("Branch taken                         : %llu\n", (unsigned long long)g_branch_taken);
+void print_statistics(void) {
     printf("================================================================================\n");
+    printf("Return register (r2)                 : %d\n", registers.regs[2]);
+    printf("Total clock cycle                    : %llu\n", (unsigned long long)inst_count);  
+    printf("r-type count                         : %llu\n", (unsigned long long)r_count);
+    printf("i-type count                         : %llu\n", (unsigned long long)i_count);
+    printf("branch, j-type count, jr             : %llu\n", (unsigned long long)branch_jr_count);
+    printf("lw count                             : %llu\n", (unsigned long long)lw_count);
+    printf("sw count                             : %llu\n", (unsigned long long)sw_count);
+    printf("nop count                            : %llu\n", (unsigned long long)nop_count);
+    printf("register write count                 : %llu\n", (unsigned long long)write_reg_count);
+    print_branch_prediction_stats();
+    printf("=================================================================================\n");
 }
 
-bool step_pipeline(void)
-{
-    g_cycle_count++;
-    
-    printf("\n=== Cycle %llu ===\n", (unsigned long long)g_cycle_count);
-    
-    stage_WB();   
-    stage_MEM();  
-    stage_EX();   
-    stage_ID();   
-    stage_IF();   
-
-    print_pipeline_state();
-
-    bool pc_halt = (registers.pc == 0xFFFFFFFF);
-    bool pipeline_empty = !if_id_latch.valid && !id_ex_latch.valid && !ex_mem_latch.valid && !mem_wb_latch.valid;
-    
-    return !(pc_halt && pipeline_empty);
-}
-
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <program.bin> [entry_pc (hex)]\n", argv[0]);
+        fprintf(stderr, "사용법: %s <program.bin> [entry_pc (hex)]\n", argv[0]);
         return 1;
     }
 
     uint32_t entry_pc = (argc >= 3) ? strtoul(argv[2], NULL, 16) : 0x00000000;
 
     printf("MIPS 5-Stage Pipeline Simulator\n");
-    printf("================================\n");
+    printf("==============================\n");
 
     clear_latches();
     init_registers(entry_pc);
@@ -213,19 +304,17 @@ int main(int argc, char *argv[])
 
     printf("Starting simulation at PC=0x%08x\n", entry_pc);
 
-    int max_cycles = 10000; 
+    int max_cycles = 10000;
     
-    while (step_pipeline() && g_cycle_count < max_cycles) {
-        // getchar(); // 주석 해제하면 단계별 실행
+    while (step_pipeline() && inst_count < max_cycles) {
+        // 실행
     }
     
-    if (g_cycle_count >= max_cycles) {
+    if (inst_count >= max_cycles) {
         printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
     }
 
-    dump_registers();
     print_statistics();
-    
     printf("\nSimulation completed.\n");
 
     return 0;
