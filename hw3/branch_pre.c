@@ -1,6 +1,6 @@
 #include "structure.h"
 
-// 브랜치 예측 테이블 크기 (2^8 = 256 entries)
+// 브랜치 예측 테이블 
 #define BRANCH_PREDICTOR_SIZE 256
 #define BRANCH_PREDICTOR_MASK (BRANCH_PREDICTOR_SIZE - 1)
 
@@ -12,7 +12,6 @@ typedef enum {
     STRONGLY_TAKEN = 3        // 11
 } BranchState;
 
-// 브랜치 예측 테이블
 static BranchState branch_predictor_table[BRANCH_PREDICTOR_SIZE];
 static bool predictor_initialized = false;
 
@@ -20,7 +19,6 @@ extern uint64_t branch_predictions;
 extern uint64_t branch_correct_predictions;
 extern uint64_t branch_mispredictions;
 
-// 브랜치 예측기 초기화
 void init_branch_predictor(void) {
     if (!predictor_initialized) {
         // 모든 엔트리를 WEAKLY_NOT_TAKEN으로 초기화
