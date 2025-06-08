@@ -15,6 +15,11 @@ void stage_ID() {
     uint32_t opcode = if_id_latch.opcode;
     uint32_t funct = if_id_latch.funct;
 
+    // 명령어 정보 출력 추가
+    printf("[ID] ");
+    print_instruction_details(pc, instruction);
+    printf("\n");
+
     memset(&id_ex_latch, 0, sizeof(id_ex_latch));
 
     Control_Signals ctrl;
@@ -87,6 +92,13 @@ void stage_ID() {
             int check = (oper1 == oper2);      // 동등 여부 파악
             bool actual_taken = (check == beq_bne);
             
+            printf("[ID] Branch: R%d(0x%x) %s R%d(0x%x), predicted=%s, actual=%s\n", 
+                   inst.rs, oper1, 
+                   (opcode == 0x4) ? "==" : "!=", 
+                   inst.rt, oper2,
+                   predicted_taken ? "taken" : "not_taken",
+                   actual_taken ? "taken" : "not_taken");
+            
             // 브랜치 예측기 업데이트
             update_branch_predictor(pc, actual_taken, predicted_taken);
             
@@ -101,20 +113,19 @@ void stage_ID() {
                 else if ((sign_imm >> 15) == 0) {
                     branchaddr = ((sign_imm << 2) & 0x3ffc);
                 }
-                registers.pc = registers.pc + branchaddr;        // pc = pc + 4 + branchaddr
+                uint32_t new_pc = registers.pc + branchaddr;
+                printf("[ID] Branch taken: PC = 0x%x -> 0x%x\n", registers.pc, new_pc);
+                registers.pc = new_pc;
                 
-                // 예측이 틀렸다면 파이프라인 플러시 필요
                 if (!predicted_taken) {
-                    printf("Branch misprediction: predicted not taken, actually taken (PC: 0x%x)\n", pc);
-                    // 필요시 플러시 로직 추가
+                    printf("[ID] Branch misprediction: predicted not taken, actually taken\n");
                 }
                 return;
             }
             else {
-                // not taken
+                printf("[ID] Branch not taken: PC continues to 0x%x\n", registers.pc + 4);
                 if (predicted_taken) {
-                    printf("Branch misprediction: predicted taken, actually not taken (PC: 0x%x)\n", pc);
-                    // 필요시 플러시 로직 추가  
+                    printf("[ID] Branch misprediction: predicted taken, actually not taken\n");
                 }
                 return;
             }
@@ -122,26 +133,37 @@ void stage_ID() {
         // J (점프는 예측 불필요 - 항상 taken)
         else if (opcode == 0x2) {   // j
             uint32_t jaddr = inst.jump_target << 2;
+            printf("[ID] Jump: PC = 0x%x -> 0x%x\n", registers.pc, jaddr);
             registers.pc = jaddr;
             return;
         }   
         // JAL (점프는 예측 불필요 - 항상 taken)
         else if (opcode == 0x3) {   // jal
             uint32_t jaddr = inst.jump_target << 2;
-            registers.regs[31] = registers.pc + 4; // pc+8 (참고 코드와 동일)
+            printf("[ID] Jump and Link: PC = 0x%x -> 0x%x, R31 = 0x%x\n", 
+                   registers.pc, jaddr, registers.pc + 4);
+            registers.regs[31] = registers.pc + 4; // pc+8 
             registers.pc = jaddr;
             return;
         }   
         // JR (레지스터 점프는 예측하기 어려움 - 일단 예측 없이)
-        else {                      // jr
+        else {// jr
             uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
+            printf("[ID] Jump Register: PC = 0x%x -> 0x%x (from R%d)\n", 
+                   registers.pc, oper1, inst.rs);
             registers.pc = oper1;
             return;
         }
     }
     
-    inst.rs_value = registers.regs[inst.rs];      // rs 값 read data1
-    inst.rt_value = registers.regs[inst.rt];      // rt 값 read data2
+    // 레지스터 값 읽기 정보 출력
+    inst.rs_value = registers.regs[inst.rs];     
+    inst.rt_value = registers.regs[inst.rt];
+
+    if (inst.rs != 0 || inst.rt != 0) {
+        printf("[ID] Read: R%d=0x%x, R%d=0x%x\n", 
+               inst.rs, inst.rs_value, inst.rt, inst.rt_value);
+    }
     
     // ID/EX 래치 업데이트
     id_ex_latch.valid = true;

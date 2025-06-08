@@ -28,6 +28,8 @@ void stage_MEM() {
         mem_wb_latch.alu_result = ex_mem_latch.alu_result;
         mem_wb_latch.rt_value = 0;
         mem_wb_latch.write_reg = ex_mem_latch.write_reg;
+        
+        printf("[MEM] PC=0x%08x, lui: pass through\n", ex_mem_latch.pc);
         return;
     }
 
@@ -40,19 +42,11 @@ void stage_MEM() {
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
 
-    // lw sw 외에는 return 
-    if ((ctrl.mem_read == 0) && (ctrl.mem_write == 0)) {
-        mem_wb_latch.valid = true;
-        mem_wb_latch.pc = ex_mem_latch.pc;
-        mem_wb_latch.instruction = inst;
-        return;
-    }
-
     // 메모리 읽기 (LW)
     if (ctrl.mem_read) {
         lw_count++;
         if (address + 4 > MEMORY_SIZE) {
-            printf("MEM: address 0x%08x out of bounds (LW)\n", address);
+            printf("[MEM] LW: address 0x%08x out of bounds\n", address);
             mem_read_data = 0;
         } else {
             uint32_t temp = 0;
@@ -61,6 +55,8 @@ void stage_MEM() {
                 temp |= memory[address + j];
             }
             mem_read_data = temp;
+            printf("[MEM] LW: Mem[0x%x] = 0x%x -> R%d\n", 
+                   address, mem_read_data, ex_mem_latch.write_reg);
         }
     }
 
@@ -68,12 +64,21 @@ void stage_MEM() {
     if (ctrl.mem_write) {
         sw_count++;
         if (address + 4 > MEMORY_SIZE) {
-            printf("MEM: address 0x%08x out of bounds (SW)\n", address);
+            printf("[MEM] SW: address 0x%08x out of bounds\n", address);
         } else {
             for (int i = 0; i < 4; i++) {
                 memory[address + i] = (write_data >> (8 * i)) & 0xFF;
             }
+            printf("[MEM] SW: R%d(0x%x) -> Mem[0x%x]\n", 
+                   ex_mem_latch.instruction.rt, write_data, address);
         }
+    }
+
+    // lw sw 외의 일반 명령어는 pass through 표시
+    if ((ctrl.mem_read == 0) && (ctrl.mem_write == 0)) {
+        printf("[MEM] PC=0x%08x, %s: pass through\n", 
+               ex_mem_latch.pc,
+               get_instruction_name(ex_mem_latch.instruction.opcode, ex_mem_latch.instruction.funct));
     }
 
     // 다음 단계로 정보 전달

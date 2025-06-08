@@ -8,11 +8,13 @@ void stage_IF() {
     
     if (registers.pc == 0xFFFFFFFF) {
         if_id_latch.valid = false;
+        printf("[IF] PC=0xFFFFFFFF (HALT)\n");
         return;
     }
 
     if ((registers.pc & 0x3) || registers.pc + 3 >= MEMORY_SIZE) {
         if_id_latch.valid = false;
+        printf("[IF] PC=0x%08x (OUT OF BOUNDS)\n", registers.pc);
         return;
     }
 
@@ -37,4 +39,9 @@ void stage_IF() {
     if_id_latch.forward_b = 0;
     if_id_latch.forward_a_val = 0;
     if_id_latch.forward_b_val = 0;
+
+    // 명령어 상세 정보 출력 추가
+    printf("[IF] ");
+    print_instruction_details(pc, instruction);
+    printf("\n");
 }

@@ -13,11 +13,18 @@ void stage_WB(void) {
     if (ctrl.get_imm == 3) {
         if (mem_wb_latch.write_reg != 0) {
             registers.regs[mem_wb_latch.write_reg] = mem_wb_latch.alu_result;
+            printf("[WB] LUI: R%d = 0x%x\n", 
+                   mem_wb_latch.write_reg, mem_wb_latch.alu_result);
+        } else {
+            printf("[WB] LUI: write to R0 (ignored)\n");
         }
         return;
     }
 
     if (ctrl.reg_wb == 0) {        // reg_write 값 0이면 지우기 
+        printf("[WB] PC=0x%08x, %s: no write back\n", 
+               mem_wb_latch.pc,
+               get_instruction_name(mem_wb_latch.instruction.opcode, mem_wb_latch.instruction.funct));
         return;
     }
 
@@ -25,7 +32,12 @@ void stage_WB(void) {
 
     if (ctrl.mem_read == 1) {       // LW의 경우
         registers.regs[mem_wb_latch.write_reg] = mem_wb_latch.rt_value;
+        printf("[WB] LW: R%d = 0x%x (from memory)\n", 
+               mem_wb_latch.write_reg, mem_wb_latch.rt_value);
     } else {                        // R type alu
         registers.regs[mem_wb_latch.write_reg] = mem_wb_latch.alu_result;
+        printf("[WB] %s: R%d = 0x%x\n", 
+               get_instruction_name(mem_wb_latch.instruction.opcode, mem_wb_latch.instruction.funct),
+               mem_wb_latch.write_reg, mem_wb_latch.alu_result);
     }
 }

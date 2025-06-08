@@ -16,10 +16,10 @@ typedef enum {
 static BranchState branch_predictor_table[BRANCH_PREDICTOR_SIZE];
 static bool predictor_initialized = false;
 
-// 브랜치 예측 통계
-uint64_t branch_predictions = 0;
-uint64_t branch_correct_predictions = 0;
-uint64_t branch_mispredictions = 0;
+// 브랜치 예측 통계 변수들은 main.c에서 정의됨 (extern 사용)
+extern uint64_t branch_predictions;
+extern uint64_t branch_correct_predictions;
+extern uint64_t branch_mispredictions;
 
 // 브랜치 예측기 초기화
 void init_branch_predictor(void) {

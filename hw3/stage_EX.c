@@ -53,6 +53,10 @@ void stage_EX(void) {
         ex_mem_latch.alu_result = id_ex_latch.sign_imm;
         ex_mem_latch.rt_value = 0;
         ex_mem_latch.write_reg = id_ex_latch.write_reg;
+        
+        // LUI 출력
+        printf("[EX] PC=0x%08x, lui: immediate = 0x%08x\n", 
+               id_ex_latch.pc, id_ex_latch.sign_imm);
         return;
     }
 
@@ -97,4 +101,10 @@ void stage_EX(void) {
     ex_mem_latch.pc = id_ex_latch.pc;
     ex_mem_latch.instruction = inst;
     ex_mem_latch.alu_result = alu_result;
+
+    // ALU 결과 출력 (여기에 추가!)
+    printf("[EX] PC=0x%08x, %s: ALU result = 0x%08x\n", 
+           id_ex_latch.pc, 
+           get_instruction_name(id_ex_latch.instruction.opcode, id_ex_latch.instruction.funct),
+           alu_result);
 }

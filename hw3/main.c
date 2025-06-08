@@ -8,7 +8,6 @@ ID_EX_Latch id_ex_latch = {0};
 EX_MEM_Latch ex_mem_latch = {0};
 MEM_WB_Latch mem_wb_latch = {0};
 
-
 uint64_t inst_count = 0;        
 uint64_t r_count = 0;
 uint64_t i_count = 0; 
@@ -21,6 +20,87 @@ uint64_t g_stall_count = 0;
 uint64_t branch_predictions = 0;
 uint64_t branch_correct_predictions = 0;
 uint64_t branch_mispredictions = 0;
+
+// 명령어 이름 반환 함수
+const char* get_instruction_name(uint32_t opcode, uint32_t funct) {
+    switch (opcode) {
+        case 0:
+            switch (funct) {
+                case 0x20: return "add";
+                case 0x21: return "addu";
+                case 0x22: return "sub";
+                case 0x23: return "subu";
+                case 0x24: return "and";
+                case 0x25: return "or";
+                case 0x27: return "nor";
+                case 0x2a: return "slt";
+                case 0x2b: return "sltu";
+                case 0x00: return "sll";
+                case 0x02: return "srl";
+                case 0x08: return "jr";
+                case 0x09: return "jalr";
+                default: return "unknown_r";
+            }
+        case 2: return "j";
+        case 3: return "jal";
+        case 4: return "beq";
+        case 5: return "bne";
+        case 8: return "addi";
+        case 9: return "addiu";
+        case 10: return "slti";
+        case 11: return "sltiu";
+        case 12: return "andi";
+        case 13: return "ori";
+        case 15: return "lui";
+        case 35: return "lw";
+        case 43: return "sw";
+        default: return "unknown";
+    }
+}
+
+// 명령어 상세 정보 출력 함수
+void print_instruction_details(uint32_t pc, uint32_t instruction) {
+    uint32_t opcode = instruction >> 26;
+    uint32_t rs = (instruction >> 21) & 0x1f;
+    uint32_t rt = (instruction >> 16) & 0x1f;
+    uint32_t rd = (instruction >> 11) & 0x1f;
+    uint32_t shamt = (instruction >> 6) & 0x1f;
+    uint32_t funct = instruction & 0x3f;
+    uint32_t immediate = instruction & 0xffff;
+    uint32_t jump_target = instruction & 0x3ffffff;
+    
+    const char* inst_name = get_instruction_name(opcode, funct);
+    
+    printf("PC=0x%08x, Inst=0x%08x, %s ", pc, instruction, inst_name);
+    
+    // 명령어 타입별 상세 출력
+    if (opcode == 0) { // R-type
+        if (funct == 0x08) { // jr
+            printf("$%d", rs);
+        } else if (funct == 0x00 || funct == 0x02) { // sll, srl
+            printf("$%d, $%d, %d", rd, rt, shamt);
+        } else {
+            printf("$%d, $%d, $%d", rd, rs, rt);
+        }
+    } else if (opcode == 2 || opcode == 3) { // j, jal
+        printf("0x%x", jump_target << 2);
+    } else if (opcode == 4 || opcode == 5) { // beq, bne
+        int16_t signed_imm = (int16_t)immediate;
+        printf("$%d, $%d, %d", rs, rt, signed_imm);
+    } else if (opcode == 35 || opcode == 43) { // lw, sw
+        int16_t signed_imm = (int16_t)immediate;
+        printf("$%d, %d($%d)", rt, signed_imm, rs);
+    } else if (opcode == 15) { // lui
+        printf("$%d, 0x%x", rt, immediate);
+    } else { // I-type
+        if (opcode == 12 || opcode == 13) { // andi, ori (zero-extended)
+            printf("$%d, $%d, 0x%x", rt, rs, immediate);
+        } else { // sign-extended
+            int16_t signed_imm = (int16_t)immediate;
+            printf("$%d, $%d, %d", rt, rs, signed_imm);
+        }
+    }
+}
 
 void clear_latches(void) {
     memset(&if_id_latch, 0, sizeof(if_id_latch));
@@ -71,11 +151,8 @@ bool step_pipeline(void) {
     static int exit_proc = 0;
     static int ctrl_flow[4] = {-1, -1, -1, -1};  
     
-    // 해저드 검출을 위한 변수들
-    int hazard_cnt = 0;
-    int lw_ex_hazardA = 0;
-    int lw_ex_hazardB = 0;
-    int bj_lw_hazard = 0;
+    // 사이클 정보 출력
+    printf("\n========== Cycle %llu ==========\n", (unsigned long long)inst_count + 1);
     
     // inst_count 증가 
     inst_count++;
@@ -86,94 +163,24 @@ bool step_pipeline(void) {
         nop_count++;
     }
     
-    // 1. EX 단계 포워딩 검출
-    if (id_ex_latch.valid && id_ex_latch.control_signals.rs_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
-        int temp1 = 0;
-        
-        if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && 
-            ex_mem_latch.write_reg != 0 && id_ex_latch.instruction.rs == ex_mem_latch.write_reg) {
-            id_ex_latch.forward_a = 0b10;
-            hazard_cnt++;
-            if (ex_mem_latch.control_signals.mem_read != 1) {
-                id_ex_latch.forward_a_val = ex_mem_latch.alu_result;
-            } else {
-                lw_ex_hazardA = 1;
-            }
-            temp1 = 1;
-        }
-        
-        if ((temp1 == 0) && mem_wb_latch.valid && mem_wb_latch.control_signals.reg_wb == 1 && 
-            id_ex_latch.instruction.rs == mem_wb_latch.write_reg) {
-            id_ex_latch.forward_a = 0b01;
-            hazard_cnt++;
-            id_ex_latch.forward_a_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
-                                        mem_wb_latch.rt_value : mem_wb_latch.alu_result;
-        }
+    // ===== hazard.c의 함수들을 사용하여 해저드 검출 =====
+    
+    // 1. 로드-사용 해저드 검출
+    HazardUnit hazard_unit = detect_hazard();
+    if (hazard_unit.stall) {
+        handle_stall();
+        g_stall_count++;
+        // 스톨 시 IF와 ID 단계를 멈춤
+        ctrl_flow[0] = 0; // IF 스톨
+        // ID는 이미 처리된 명령어를 유지
+        return true; // 스톨 상태에서 계속 실행
     }
     
-    if (id_ex_latch.valid && id_ex_latch.control_signals.rt_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
-        int temp2 = 0;
-        
-        if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && 
-            ex_mem_latch.write_reg != 0 && id_ex_latch.instruction.rt == ex_mem_latch.write_reg) {
-            id_ex_latch.forward_b = 0b10;
-            hazard_cnt++;
-            if (ex_mem_latch.control_signals.mem_read != 1) {
-                id_ex_latch.forward_b_val = ex_mem_latch.alu_result;
-            } else {
-                lw_ex_hazardB = 1;
-            }
-            temp2 = 1;
-        }
-        
-        if ((temp2 == 0) && mem_wb_latch.valid && mem_wb_latch.control_signals.reg_wb == 1 && 
-            id_ex_latch.instruction.rt == mem_wb_latch.write_reg) {
-            id_ex_latch.forward_b = 0b01;
-            id_ex_latch.forward_b_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
-                                        mem_wb_latch.rt_value : mem_wb_latch.alu_result;
-            hazard_cnt++;
-        }
-    }
+    // 2. 포워딩 검출 및 설정
+    detect_forwarding();
+    detect_branch_forwarding();
     
-    // 2. 브랜치/JR 포워딩 검출 
-    if (if_id_latch.valid) {
-        uint32_t opcode = if_id_latch.opcode;
-        uint32_t funct = if_id_latch.funct;
-        
-        if ((opcode == 0x4 || opcode == 0x5) || (opcode == 0x0 && funct == 0x08)) {
-            
-            // MA 단계 포워딩
-            if (ex_mem_latch.valid && ex_mem_latch.control_signals.reg_wb == 1 && ex_mem_latch.write_reg != 0) {
-                if (ex_mem_latch.write_reg == if_id_latch.reg_src) {
-                    if_id_latch.forward_a = 0b01;
-                    hazard_cnt++;
-                }
-                
-                if ((ex_mem_latch.write_reg == if_id_latch.reg_tar) && (opcode == 0x4 || opcode == 0x5)) {
-                    if_id_latch.forward_b = 0b01;
-                    hazard_cnt++;
-                }
-                
-                if (ex_mem_latch.control_signals.mem_read == 1) {
-                    bj_lw_hazard = 1;
-                    hazard_cnt++;
-                }
-            }
-            
-            // EX 단계 포워딩
-            if (id_ex_latch.valid && id_ex_latch.control_signals.reg_wb == 1 && id_ex_latch.write_reg != 0) {
-                if (id_ex_latch.write_reg == if_id_latch.reg_src) {
-                    if_id_latch.forward_a = 0b10;
-                    hazard_cnt++;
-                }
-                
-                if ((id_ex_latch.write_reg == if_id_latch.reg_tar) && (opcode == 0x4 || opcode == 0x5)) {
-                    if_id_latch.forward_b = 0b10;
-                    hazard_cnt++;
-                }
-            }
-        }
-    }
+    // ===== 파이프라인 스테이지 실행 =====
     
     // 1. WB 단계
     if (ctrl_flow[3] == 1) {
@@ -181,7 +188,7 @@ bool step_pipeline(void) {
             stage_WB();
         }
     } else if (ctrl_flow[3] == 0) {
-        // NOP은 출력하지 않음 
+        printf("[WB] NOP\n");
     }
     
     // 2. MEM 단계  
@@ -190,40 +197,33 @@ bool step_pipeline(void) {
             stage_MEM();
         }
     } else if (ctrl_flow[2] == 0) {
-        // NOP 처리
+        printf("[MEM] NOP\n");
         mem_wb_latch.valid = false;
-        // 참고 코드에서는 init_memwb 호출
         memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
     }
     
-    // 3. LW-EX hazard 값 업데이트
-    if (lw_ex_hazardA == 1 && mem_wb_latch.valid) {
-        id_ex_latch.forward_a_val = mem_wb_latch.rt_value;
-    }
-    if (lw_ex_hazardB == 1 && mem_wb_latch.valid) {
-        id_ex_latch.forward_b_val = mem_wb_latch.rt_value;
-    }
-    
-    // 4. 브랜치 포워딩 값 업데이트 (MA)
+    // 3. LW-EX hazard 값 업데이트 (브랜치 포워딩에서 필요)
     if (if_id_latch.forward_a == 0b01 && mem_wb_latch.valid) {
-        if_id_latch.forward_a_val = (bj_lw_hazard == 1) ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+        if_id_latch.forward_a_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                    mem_wb_latch.rt_value : mem_wb_latch.alu_result;
     }
     if (if_id_latch.forward_b == 0b01 && mem_wb_latch.valid) {
-        if_id_latch.forward_b_val = (bj_lw_hazard == 1) ? mem_wb_latch.rt_value : mem_wb_latch.alu_result;
+        if_id_latch.forward_b_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
+                                    mem_wb_latch.rt_value : mem_wb_latch.alu_result;
     }
     
-    // 5. EX 단계
+    // 4. EX 단계
     if (ctrl_flow[1] == 1) {
         if (id_ex_latch.valid) {
             stage_EX();
         }
     } else if (ctrl_flow[1] == 0) {
-        // NOP 처리
+        printf("[EX] NOP\n");
         ex_mem_latch.valid = false;
         memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
     }
     
-    // 6. 브랜치 포워딩 값 업데이트 (EX)
+    // 5. 브랜치 포워딩 값 업데이트 (EX)
     if (if_id_latch.forward_a == 0b10 && ex_mem_latch.valid) {
         if_id_latch.forward_a_val = ex_mem_latch.alu_result;
     }
@@ -231,32 +231,31 @@ bool step_pipeline(void) {
         if_id_latch.forward_b_val = ex_mem_latch.alu_result;
     }
     
-    // 7. ID 단계
+    // 6. ID 단계
     if (ctrl_flow[0] == 1) {
         if (if_id_latch.valid) {
             stage_ID();
         }
     } else if (ctrl_flow[0] == 0) {
-        // NOP 처리
+        printf("[ID] NOP\n");
         id_ex_latch.valid = false;
         memset(&id_ex_latch, 0, sizeof(id_ex_latch));
     }
     
-    // 8. IF 단계 (항상 실행)
+    // 7. IF 단계
     if (registers.pc != 0xffffffff) {
         stage_IF();
     }
     
-    // 9. PC 업데이트 및 ctrl_flow 시프트 
+    // 8. PC 업데이트 및 ctrl_flow 시프트
     if (registers.pc != 0xffffffff) {
         registers.pc = registers.pc + 4;
         
-        // ctrl_flow 시프트
         for (int i = 3; i > 0; i--) {
             ctrl_flow[i] = ctrl_flow[i-1];
         }
         
-        ctrl_flow[0] = 1;  // stall_cnt 고려하지 않음 
+        ctrl_flow[0] = 1;
     } else if (registers.pc == 0xffffffff) {
         exit_proc++;
         for (int i = 3; i > 0; i--) {

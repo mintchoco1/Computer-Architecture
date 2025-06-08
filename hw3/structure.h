@@ -156,4 +156,5 @@ extern void extend_imm_val(Instruction*);
 
 extern uint64_t g_inst_count;
 
+extern void print_instruction_details(uint32_t pc, uint32_t instruction);
 #endif
