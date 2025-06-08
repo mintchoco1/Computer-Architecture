@@ -21,7 +21,6 @@ uint64_t branch_predictions = 0;
 uint64_t branch_correct_predictions = 0;
 uint64_t branch_mispredictions = 0;
 
-// 명령어 이름 반환 함수
 const char* get_instruction_name(uint32_t opcode, uint32_t funct) {
     switch (opcode) {
         case 0:
@@ -58,7 +57,6 @@ const char* get_instruction_name(uint32_t opcode, uint32_t funct) {
     }
 }
 
-// 명령어 상세 정보 출력 함수
 void print_instruction_details(uint32_t pc, uint32_t instruction) {
     uint32_t opcode = instruction >> 26;
     uint32_t rs = (instruction >> 21) & 0x1f;
@@ -151,19 +149,14 @@ bool step_pipeline(void) {
     static int exit_proc = 0;
     static int ctrl_flow[4] = {-1, -1, -1, -1};  
     
-    // 사이클 정보 출력
     printf("\n========== Cycle %llu ==========\n", (unsigned long long)inst_count + 1);
     
-    // inst_count 증가 
     inst_count++;
     
-    // IF 단계에서 NOP 처리
     if (if_id_latch.valid && if_id_latch.instruction == 0) {
         ctrl_flow[0] = 0;
         nop_count++;
     }
-    
-    // ===== hazard.c의 함수들을 사용하여 해저드 검출 =====
     
     // 1. 로드-사용 해저드 검출
     HazardUnit hazard_unit = detect_hazard();
@@ -179,8 +172,6 @@ bool step_pipeline(void) {
     // 2. 포워딩 검출 및 설정
     detect_forwarding();
     detect_branch_forwarding();
-    
-    // ===== 파이프라인 스테이지 실행 =====
     
     // 1. WB 단계
     if (ctrl_flow[3] == 1) {

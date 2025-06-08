@@ -15,7 +15,6 @@ void stage_ID() {
     uint32_t opcode = if_id_latch.opcode;
     uint32_t funct = if_id_latch.funct;
 
-    // 명령어 정보 출력 추가
     printf("[ID] ");
     print_instruction_details(pc, instruction);
     printf("\n");
@@ -55,12 +54,10 @@ void stage_ID() {
         branch_jr_count++;
     }
     
-    // write_reg 설정 
     if (ctrl.reg_dst == 1) {                                
         id_ex_latch.write_reg = (instruction >> 11) & 0x0000001f;        // rd
     }
     
-    // immediate 처리
     if (ctrl.get_imm != 0) {
         inst.immediate = instruction & 0xffff;
         id_ex_latch.write_reg = inst.rt;
@@ -78,18 +75,17 @@ void stage_ID() {
         }
     }
     
-    // 브랜치/점프 처리
     if (ctrl.ex_skip == 1) {
-        // 브랜치 명령어에 대해서만 예측 적용
+
         if (opcode == 0x4 || opcode == 0x5) {        // beq, bne
-            // 브랜치 예측 수행
+
             bool predicted_taken = predict_branch(pc);
             
             uint32_t oper1 = (if_id_latch.forward_a >= 1) ? if_id_latch.forward_a_val : registers.regs[inst.rs];
             uint32_t oper2 = (if_id_latch.forward_b >= 1) ? if_id_latch.forward_b_val : registers.regs[inst.rt];
 
             int beq_bne = (opcode == 0x4) ? 1 : 0;   // beq = 1, bne = 0
-            int check = (oper1 == oper2);      // 동등 여부 파악
+            int check = (oper1 == oper2);    
             bool actual_taken = (check == beq_bne);
             
             printf("[ID] Branch: R%d(0x%x) %s R%d(0x%x), predicted=%s, actual=%s\n", 
@@ -99,11 +95,11 @@ void stage_ID() {
                    predicted_taken ? "taken" : "not_taken",
                    actual_taken ? "taken" : "not_taken");
             
-            // 브랜치 예측기 업데이트
+            
             update_branch_predictor(pc, actual_taken, predicted_taken);
             
             if (actual_taken) {
-                // taken
+                
                 uint32_t sign_imm = instruction & 0xffff;                     
                 uint32_t branchaddr = sign_imm;
 
@@ -156,7 +152,6 @@ void stage_ID() {
         }
     }
     
-    // 레지스터 값 읽기 정보 출력
     inst.rs_value = registers.regs[inst.rs];     
     inst.rt_value = registers.regs[inst.rt];
 
@@ -165,7 +160,6 @@ void stage_ID() {
                inst.rs, inst.rs_value, inst.rt, inst.rt_value);
     }
     
-    // ID/EX 래치 업데이트
     id_ex_latch.valid = true;
     id_ex_latch.pc = pc;
     id_ex_latch.instruction = inst;

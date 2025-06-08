@@ -9,7 +9,6 @@ void stage_WB(void) {
 
     const Control_Signals ctrl = mem_wb_latch.control_signals;
 
-    // LUI 명령어 특별 처리 
     if (ctrl.get_imm == 3) {
         if (mem_wb_latch.write_reg != 0) {
             registers.regs[mem_wb_latch.write_reg] = mem_wb_latch.alu_result;
@@ -21,7 +20,7 @@ void stage_WB(void) {
         return;
     }
 
-    if (ctrl.reg_wb == 0) {        // reg_write 값 0이면 지우기 
+    if (ctrl.reg_wb == 0) {       
         printf("[WB] PC=0x%08x, %s: no write back\n", 
                mem_wb_latch.pc,
                get_instruction_name(mem_wb_latch.instruction.opcode, mem_wb_latch.instruction.funct));

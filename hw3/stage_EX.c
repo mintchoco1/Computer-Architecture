@@ -42,10 +42,8 @@ void stage_EX(void) {
     Instruction inst = id_ex_latch.instruction;
     Control_Signals ctrl = id_ex_latch.control_signals;
 
-    // 제어 신호 복사
     ex_mem_latch.control_signals = ctrl;
 
-    // LUI 명령어 특별 처리
     if (ctrl.get_imm == 3) {
         ex_mem_latch.valid = true;
         ex_mem_latch.pc = id_ex_latch.pc;
@@ -54,33 +52,27 @@ void stage_EX(void) {
         ex_mem_latch.rt_value = 0;
         ex_mem_latch.write_reg = id_ex_latch.write_reg;
         
-        // LUI 출력
         printf("[EX] PC=0x%08x, lui: immediate = 0x%08x\n", 
                id_ex_latch.pc, id_ex_latch.sign_imm);
         return;
     }
 
-    // ex_skip 명령어들은 건너뛰기
     if (ctrl.ex_skip != 0) {
         ex_mem_latch.valid = false;
         return;
     }
 
-    // reg_write 값 id_ex에서 ex_mem 으로 옮겨주기
     if (ctrl.reg_wb == 1) {         
         ex_mem_latch.write_reg = id_ex_latch.write_reg;
     }
 
-    // 포워딩 처리 
     uint32_t operand1 = (id_ex_latch.forward_a >= 1) ? id_ex_latch.forward_a_val : id_ex_latch.rs_value;
 
     uint32_t alu_result = 0;
 
-    // R-type 명령어
     if (ctrl.reg_dst == 1) {
         uint32_t operand2 = (id_ex_latch.forward_b >= 1) ? id_ex_latch.forward_b_val : id_ex_latch.rt_value;
 
-        // SLL, SRL은 shamt 사용 
         if (ctrl.alu_ctrl >= 0b1110) {
             alu_result = alu_operate(operand2, id_ex_latch.shamt, ctrl.alu_ctrl, &inst);
         } else {
@@ -102,7 +94,6 @@ void stage_EX(void) {
     ex_mem_latch.instruction = inst;
     ex_mem_latch.alu_result = alu_result;
 
-    // ALU 결과 출력 (여기에 추가!)
     printf("[EX] PC=0x%08x, %s: ALU result = 0x%08x\n", 
            id_ex_latch.pc, 
            get_instruction_name(id_ex_latch.instruction.opcode, id_ex_latch.instruction.funct),

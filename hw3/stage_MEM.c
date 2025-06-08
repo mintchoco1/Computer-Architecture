@@ -17,10 +17,8 @@ void stage_MEM() {
     uint32_t write_data = ex_mem_latch.rt_value;
     uint32_t mem_read_data = 0;
 
-    // 제어 신호 복사
     mem_wb_latch.control_signals = ctrl;
 
-    // LUI 명령어 특별 처리
     if (ctrl.get_imm == 3) {
         mem_wb_latch.valid = true;
         mem_wb_latch.pc = ex_mem_latch.pc;
@@ -38,11 +36,10 @@ void stage_MEM() {
         return;
     }
 
-    // 기본 값들 설정
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
 
-    // 메모리 읽기 (LW)
+    // 메모리 읽기 
     if (ctrl.mem_read) {
         lw_count++;
         if (address + 4 > MEMORY_SIZE) {
@@ -60,7 +57,6 @@ void stage_MEM() {
         }
     }
 
-    // 메모리 쓰기 (SW) 
     if (ctrl.mem_write) {
         sw_count++;
         if (address + 4 > MEMORY_SIZE) {
@@ -81,11 +77,10 @@ void stage_MEM() {
                get_instruction_name(ex_mem_latch.instruction.opcode, ex_mem_latch.instruction.funct));
     }
 
-    // 다음 단계로 정보 전달
     mem_wb_latch.valid = true;
     mem_wb_latch.pc = ex_mem_latch.pc;
     mem_wb_latch.instruction = inst;
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
-    mem_wb_latch.rt_value = mem_read_data;  // LW의 경우 메모리에서 읽은 값
+    mem_wb_latch.rt_value = mem_read_data;  
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
 }

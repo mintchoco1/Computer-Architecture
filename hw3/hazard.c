@@ -1,5 +1,3 @@
-// hazard.c의 개선된 함수들
-
 #include "structure.h"
 
 static uint64_t stall_count = 0;
@@ -11,7 +9,7 @@ ForwardingUnit detect_forwarding(void) {
         return unit;
     }
 
-    // EX 단계 포워딩 검출 (참고 코드와 동일한 로직)
+    // EX 단계 포워딩 검출
     if (id_ex_latch.control_signals.rs_ch == 1 && id_ex_latch.control_signals.ex_skip == 0) {
         int temp1 = 0;
         
@@ -192,7 +190,7 @@ uint32_t get_forwarded_value(int forward_type, uint32_t original_value) {
 }
 
 void handle_stall(void) {
-    // PC를 되돌려서 같은 명령어를 다시 페치하도록 함
+    // PC를 되돌려서 같은 명령어를 다시 페치
     registers.pc -= 4;
     printf("[HAZARD] Pipeline stall: PC rolled back to 0x%08x\n", registers.pc);
 }

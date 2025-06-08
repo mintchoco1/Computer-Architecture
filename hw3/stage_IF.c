@@ -40,7 +40,6 @@ void stage_IF() {
     if_id_latch.forward_a_val = 0;
     if_id_latch.forward_b_val = 0;
 
-    // 명령어 상세 정보 출력 추가
     printf("[IF] ");
     print_instruction_details(pc, instruction);
     printf("\n");
