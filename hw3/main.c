@@ -294,15 +294,15 @@ int main(int argc, char *argv[]) {
 
     printf("Starting simulation at PC=0x%08x\n", entry_pc);
 
-    int max_cycles = 10000;
+    //int max_cycles = 10000;
     
-    while (step_pipeline() && inst_count < max_cycles) {
+    while (step_pipeline()) {
         // 실행
     }
     
-    if (inst_count >= max_cycles) {
-        printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
-    }
+    //if (inst_count >= max_cycles) {
+    //    printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
+    //}
 
     print_statistics();
     printf("\nSimulation completed.\n");
