@@ -39,38 +39,33 @@ void stage_MEM() {
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
 
-    // 메모리 읽기 
+    // 메모리 읽기 (LW) - 캐시 사용
     if (ctrl.mem_read) {
         lw_count++;
         if (address + 4 > MEMORY_SIZE) {
             printf("[MEM] LW: address 0x%08x out of bounds\n", address);
             mem_read_data = 0;
         } else {
-            uint32_t temp = 0;
-            for (int j = 3; j >= 0; j--) {
-                temp <<= 8;
-                temp |= memory[address + j];
-            }
-            mem_read_data = temp;
+            // 캐시를 통해 데이터 읽기
+            mem_read_data = cache_read_data(address);
             printf("[MEM] LW: Mem[0x%x] = 0x%x -> R%d\n", 
                    address, mem_read_data, ex_mem_latch.write_reg);
         }
     }
 
+    // 메모리 쓰기 (SW) - 캐시 사용
     if (ctrl.mem_write) {
         sw_count++;
         if (address + 4 > MEMORY_SIZE) {
             printf("[MEM] SW: address 0x%08x out of bounds\n", address);
         } else {
-            for (int i = 0; i < 4; i++) {
-                memory[address + i] = (write_data >> (8 * i)) & 0xFF;
-            }
+            // 캐시를 통해 데이터 쓰기
+            cache_write_data(address, write_data);
             printf("[MEM] SW: R%d(0x%x) -> Mem[0x%x]\n", 
                    ex_mem_latch.instruction.rt, write_data, address);
         }
     }
 
-    // lw sw 외의 일반 명령어는 pass through 표시
     if ((ctrl.mem_read == 0) && (ctrl.mem_write == 0)) {
         printf("[MEM] PC=0x%08x, %s: pass through\n", 
                ex_mem_latch.pc,
@@ -83,4 +78,4 @@ void stage_MEM() {
     mem_wb_latch.alu_result = ex_mem_latch.alu_result;
     mem_wb_latch.rt_value = mem_read_data;  
     mem_wb_latch.write_reg = ex_mem_latch.write_reg;
-}
+}   

@@ -150,6 +150,15 @@ extern uint64_t branch_predictions;
 extern uint64_t branch_correct_predictions;
 extern uint64_t branch_mispredictions;
 
+// 캐시 관련 함수들
+extern void init_cache(void);
+extern uint32_t cache_read_instruction(uint32_t address);
+extern uint32_t cache_read_data(uint32_t address);
+extern void cache_write_data(uint32_t address, uint32_t data);
+extern void cache_flush(void);
+extern void print_cache_statistics(void);
+extern void print_cache_configuration(void);
+
 extern const char* get_instruction_name(uint32_t opcode, uint32_t funct);
 
 extern void extend_imm_val(Instruction*);

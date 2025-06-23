@@ -21,10 +21,8 @@ void stage_IF() {
     uint32_t instruction = 0;
     uint32_t pc = registers.pc;
     
-    for (int i = 0; i < 4; i++) {
-        instruction = instruction << 8;
-        instruction |= memory[pc + (3 - i)];
-    }
+    // 캐시를 통해 명령어 읽기
+    instruction = cache_read_instruction(pc);
 
     if_id_latch.next_pc = pc + 4;  
     if_id_latch.instruction = instruction;

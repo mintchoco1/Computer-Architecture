@@ -169,11 +169,9 @@ bool step_pipeline(void) {
         return true; // 스톨 상태에서 계속 실행
     }
     
-    // 2. 포워딩 검출 및 설정
     detect_forwarding();
     detect_branch_forwarding();
     
-    // 1. WB 단계
     if (ctrl_flow[3] == 1) {
         if (mem_wb_latch.valid) {
             stage_WB();
@@ -182,7 +180,6 @@ bool step_pipeline(void) {
         printf("[WB] NOP\n");
     }
     
-    // 2. MEM 단계  
     if (ctrl_flow[2] == 1) {
         if (ex_mem_latch.valid) {
             stage_MEM();
@@ -193,7 +190,6 @@ bool step_pipeline(void) {
         memset(&mem_wb_latch, 0, sizeof(mem_wb_latch));
     }
     
-    // 3. LW-EX hazard 값 업데이트 (브랜치 포워딩에서 필요)
     if (if_id_latch.forward_a == 0b01 && mem_wb_latch.valid) {
         if_id_latch.forward_a_val = (mem_wb_latch.control_signals.mem_read == 1) ? 
                                     mem_wb_latch.rt_value : mem_wb_latch.alu_result;
@@ -203,7 +199,6 @@ bool step_pipeline(void) {
                                     mem_wb_latch.rt_value : mem_wb_latch.alu_result;
     }
     
-    // 4. EX 단계
     if (ctrl_flow[1] == 1) {
         if (id_ex_latch.valid) {
             stage_EX();
@@ -214,7 +209,6 @@ bool step_pipeline(void) {
         memset(&ex_mem_latch, 0, sizeof(ex_mem_latch));
     }
     
-    // 5. 브랜치 포워딩 값 업데이트 (EX)
     if (if_id_latch.forward_a == 0b10 && ex_mem_latch.valid) {
         if_id_latch.forward_a_val = ex_mem_latch.alu_result;
     }
@@ -222,7 +216,6 @@ bool step_pipeline(void) {
         if_id_latch.forward_b_val = ex_mem_latch.alu_result;
     }
     
-    // 6. ID 단계
     if (ctrl_flow[0] == 1) {
         if (if_id_latch.valid) {
             stage_ID();
@@ -233,12 +226,10 @@ bool step_pipeline(void) {
         memset(&id_ex_latch, 0, sizeof(id_ex_latch));
     }
     
-    // 7. IF 단계
     if (registers.pc != 0xffffffff) {
         stage_IF();
     }
     
-    // 8. PC 업데이트 및 ctrl_flow 시프트
     if (registers.pc != 0xffffffff) {
         registers.pc = registers.pc + 4;
         
@@ -272,6 +263,10 @@ void print_statistics(void) {
     printf("nop count                            : %llu\n", (unsigned long long)nop_count);
     printf("register write count                 : %llu\n", (unsigned long long)write_reg_count);
     print_branch_prediction_stats();
+    
+    // 캐시 통계 출력
+    print_cache_statistics();
+    
     printf("=================================================================================\n");
 }
 
@@ -283,26 +278,30 @@ int main(int argc, char *argv[]) {
 
     uint32_t entry_pc = (argc >= 3) ? strtoul(argv[2], NULL, 16) : 0x00000000;
 
-    printf("MIPS 5-Stage Pipeline Simulator\n");
-    printf("==============================\n");
+    printf("MIPS 5-Stage Pipeline Simulator with Cache\n");
+    printf("==========================================\n");
 
     clear_latches();
     init_registers(entry_pc);
+    
+    // 캐시 시스템 초기화
+    init_cache();
+    
+    // 캐시 설정 정보 출력
+    print_cache_configuration();
+    printf("\n");
 
     if (load_program(argv[1], entry_pc) != 0)
         return 1;
 
     printf("Starting simulation at PC=0x%08x\n", entry_pc);
 
-    //int max_cycles = 10000;
-    
     while (step_pipeline()) {
         // 실행
     }
     
-    //if (inst_count >= max_cycles) {
-    //    printf("WARNING: 최대 사이클 수 도달. 무한 루프 가능성.\n");
-    //}
+    // 캐시 플러시 
+    cache_flush();
 
     print_statistics();
     printf("\nSimulation completed.\n");
